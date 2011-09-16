@@ -1,6 +1,7 @@
 <?php
 // (c) John Wellesz for MikrosImage - September 2011
-  
+
+//php cron-FileDeleter.php --show -c=testConfig.txt
 
 error_reporting ( E_ALL | E_STRICT );
 
@@ -44,14 +45,19 @@ function isDirValid ($name)
     $badDir = false;
     $nameFormat = '#[/\\\\](\w+)__TO_KEEP_(\d+)_(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$#';
 
+    $timeMultiplicators = array (
+	"YEAR"	    => 3600 * 24 * 365,
+	"MONTH"	    => 3600 * 24 * 30,
+	"DAY"	    => 3600 * 24,
+	"HOUR"	    => 3600,
+	"MINUTE"    => 60,
+	"SECOND"    => 1,
+    );
+
     if ( preg_match($nameFormat, $name, $matches) ) {
 	if ( is_dir ($name)) {
-
-	    var_dump($matches);
-
-	    return true;
-
-	} else 
+	    return array ('name' => $matches[1], 'duration' => $matches[2] * $timeMultiplicators [ $matches[3] ]);
+	} else
 	    $badDir = "Directory '$name' cannot be found!";
     } else
 	$badDir = "Wrong name format, should match '$nameFormat'";
@@ -103,6 +109,7 @@ function checkOptions ()
 	define ('CONFIG', false);
 }
 
+
 function getConfig ()
 {
     if (CONFIG)
@@ -119,17 +126,31 @@ function getConfig ()
     if (count($config) == 0 )
 	errorExit(2, ERRORSTR,'Configuration file is empty!', ' Configuration file used : ', ( isset($configPath) ? realpath($configPath) : CONFIG ));
 
+    $directories = array ();
+
     foreach ($config as $path)
-	if (! isDirValid($path)) {
+	if (! ($param = isDirValid($path)))
 	    unset ($config[$path]);
+	else {
+	    $directories [$path] = $param;
 	}
 
+    return $directories;
+}
+
+
+function getFilesToDelete ($dirToScan)
+{
+    var_dump($dirToScan);
+
+    foreach ($dirToScan as $path=>$param)
+	cprint($path);
 }
 
 cprint ("\nHello fucking world!\n");
 
 checkOptions ();
-getConfig ();
+getFilesToDelete ( getConfig () );
 
 
 
