@@ -192,7 +192,7 @@ function saveDirectoryScannedDatas ($path, $datas)
 
     $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
 
-    if (! file_put_contents($dataFileName, $datas, LOCK_EX))
+    if (! file_put_contents($dataFileName, serialize($datas), LOCK_EX))
 	error("Couldn't save scanned datas in: ", $dataFileName);
 }
 
@@ -202,7 +202,6 @@ function fileGrimReaper ($dirToScan)
 
     $filesToDelete = array();
 
-    // XXX how do we check for empty directories ? Just delete them if we found and deleted files in them else check for their modtime ?
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
 	cprint("The file Grim Reaper is now considering files in: ", $dirPath);
@@ -223,7 +222,7 @@ function fileGrimReaper ($dirToScan)
 		// If the file has NOT been modified since the last scan,
 		// check if it's elligeable for deletion
 		if ($fileMTime == $knownData["fileMTime"])
-		    if ($knownData["foundOn"] + $dirParam['duration'] > NOW)
+		    if ($knownData["foundOn"] + $dirParam['duration'] < NOW)
 			$filesToDelete[] = $filePath;
 		
 	    } else
@@ -232,28 +231,41 @@ function fileGrimReaper ($dirToScan)
 		unset ($knownDatas[$filePath]);
 	}
 
+	$reapedDirectories = array(); // used to remove empty dirs after delting files
+
 	// Here comes the file Grim Reaper
-	foreach ($filesToDelete as $file) {
-	    if (DRYRUN)
-		cprint('Would have (--dry-run is set) deleted file: ', $file)
-	    elseif (unlink($file))
+	foreach ($filesToDelete as $file)
+	    if (DRYRUN) {
+
+		cprint('Would have (--dry-run is set) deleted file: ', $file);
+		$reapedDirectories[dirname($file)] = true;
+
+	    } elseif (unlink($file)) {
+
 		unset($knownDatas[$file]);
-	    else
+		$reapedDirectories[dirname($file)] = true;
+		cprint($file, " was deleted.");
+
+	    } else
 		error("Couldn't delete file: ", $file);
-	}
-    
+
 	// scan directory for new items
-	$iterator = new RecursiveDirectoryIterator ($dirToScan);
+	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath),
+                                              RecursiveIteratorIterator::CHILD_FIRST);
 	$isDirEmpty = array();
 
 	if ( $iterator ) {
+	    // XXX find a way to detect when directories are skipped due to wrong permission
 	    foreach ($iterator as $fileinfo) {
 
-		if($fileinfo->isDot())
-		    continue;
+		if ($fileinfo->isDir() && ! isset($isDirEmpty[$fileinfo->getPathname()]) )
+		    $isDirEmpty[$fileinfo->getPath()] = true;
+
 
 		if (! $fileinfo->isFile())
 		    continue;
+
+		$isDirEmpty[$fileinfo->getPath()] = false;
 
 		// if the file is new
 		if (! isset ($knownDatas[$fileinfo->getPathname()]) )
@@ -266,6 +278,32 @@ function fileGrimReaper ($dirToScan)
 	    errorExit(2, "Impossible to scan directory: ", $dirToScan);
 
 
+	unset ($isDirEmpty[$dirPath]);
+
+	// remove empty directories left behind after reaping their content or expired empty ones
+	// XXX need to do this child first... just sort this list in a clever way (the one with the most '/' first...
+	foreach ($isDirEmpty as $path=>$isEmpty)
+	    // the directory is empty and files were reaped inside it
+	    if ($isEmpty && isset($reapedDirectories[$path])) {
+
+		if (DRYRUN)
+		    cprint('Would have (--dry-run is set) removed (reaped) directory: ', $path);
+		elseif (!rmdir($path))
+		    error("Couldn't remove directory: ", $path);
+		else
+		    cprint('Removed empty (reaped) directory: ', $path);
+
+		// the directory is empty and is older than allowed duration
+	    } elseif ($isEmpty && (filemtime($path) + $dirParam['duration'] < NOW)) {
+
+		if (DRYRUN)
+		    cprint('Would have (--dry-run is set) removed (old) directory: ', $path);
+		else
+		    if (!rmdir($path))
+			error("couldn't remove directory: ", $path);
+		    else
+			cprint('Removed emty (old) directory: ', $path);
+	    }
 	
 
 	saveDirectoryScannedDatas($dirPath, $knownDatas);
