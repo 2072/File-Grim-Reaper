@@ -1,12 +1,16 @@
 <?php
 // (c) John Wellesz for MikrosImage - September 2011
 
-//php cron-FileDeleter.php --show -c=testConfig.txt
+//php cron-FileDeleter.php --show -c=testConfig.txt --dry-run
 
 error_reporting ( E_ALL | E_STRICT );
 
 const DEFAULT_CONFIG_FILE = "cron-FileDeleter-paths.txt";
 const ERRORSTR = "ERROR: ";
+
+define ( 'NOW', time());
+
+
 
 function cprint ()
 {
@@ -73,10 +77,11 @@ function checkOptions ()
     $longOptions = array (
 	"config::",
 	"show",
-	"remove"
+	"remove",
+	"dry-run"
     );
 
-    $setOptions = getopt("c::sr", $longOptions);
+    $setOptions = getopt("c::srd", $longOptions);
 
 
     if (isset($setOptions['s']) || isset($setOptions['show']))
@@ -89,6 +94,11 @@ function checkOptions ()
 	define ('REMOVE', true);
     else
 	define ('REMOVE', false);
+
+    if (isset($setOptions['d']) || isset($setOptions['dry-run']))
+	define ('DRYRUN', true);
+    else
+	define ('DRYRUN', false);
 
 
     if (SHOW && REMOVE)
@@ -109,6 +119,19 @@ function checkOptions ()
 	define ('CONFIG', false);
 }
 
+function checkDataPath ()
+{
+    // find our config path
+    if (! @realpath($_SERVER['argv'][0]) )
+	errorExit(2, 'Impossible to determine script directory...');
+    else
+	define ('DATA_PATH', dirname(realpath($_SERVER['argv'][0])) . "/cron-FileDeleter-Datas");
+
+    if (!is_dir(DATA_PATH)) {
+	mkdir(DATA_PATH);
+	cprint('Created data folder: ', DATA_PATH);
+    }
+}
 
 function getConfig ()
 {
@@ -132,25 +155,133 @@ function getConfig ()
 	if (! ($param = isDirValid($path)))
 	    unset ($config[$path]);
 	else {
-	    $directories [$path] = $param;
+	    $directories [realpath($path)] = $param;
 	}
 
     return $directories;
 }
 
 
-function getFilesToDelete ($dirToScan)
+function getDirectoryScannedDatas ($path)
+{
+    $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
+
+    if (! $dataFileName)
+	errorExit(2, 'Impossible error #1: preg_replace() failed on: ', $path);
+
+    $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
+
+    if (file_exists($dataFileName)) {
+
+	$data = unserialize (file_get_contents($dataFileName));
+
+	if ($data)
+	    return $data;
+	else
+	    error('Error loading data for directory: ', $path);
+    } else
+	return array ();
+}
+
+function saveDirectoryScannedDatas ($path, $datas)
+{
+    $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
+
+    if (! $dataFileName)
+	errorExit(2, 'Impossible error #2: preg_replace() failed on: ', $path);
+
+    $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
+
+    if (! file_put_contents($dataFileName, $datas, LOCK_EX))
+	error("Couldn't save scanned datas in: ", $dataFileName);
+}
+
+function fileGrimReaper ($dirToScan)
 {
     var_dump($dirToScan);
 
-    foreach ($dirToScan as $path=>$param)
-	cprint($path);
+    $filesToDelete = array();
+
+    // XXX how do we check for empty directories ? Just delete them if we found and deleted files in them else check for their modtime ?
+
+    foreach ($dirToScan as $dirPath=>$dirParam) {
+	cprint("The file Grim Reaper is now considering files in: ", $dirPath);
+	// get previous scan datas
+	$knownDatas = getDirectoryScannedDatas($dirPath);
+
+	// Scan existing entries
+	foreach ($knownDatas as $filePath=>$knownData) {
+	    // if the file is still there
+	    if (file_exists($filePath)) {
+
+		// get current file mod time
+		if (! $fileMTime = filemtime($filePath)) {
+		    error("Couldn't get modification time for ", $filePath);
+		    continue;
+		}
+
+		// If the file has NOT been modified since the last scan,
+		// check if it's elligeable for deletion
+		if ($fileMTime == $knownData["fileMTime"])
+		    if ($knownData["foundOn"] + $dirParam['duration'] > NOW)
+			$filesToDelete[] = $filePath;
+		
+	    } else
+		// the file is no longer there so delete its entry in $KnownDatas
+		// this is where the list is cleaned
+		unset ($knownDatas[$filePath]);
+	}
+
+	// Here comes the file Grim Reaper
+	foreach ($filesToDelete as $file) {
+	    if (DRYRUN)
+		cprint('Would have (--dry-run is set) deleted file: ', $file)
+	    elseif (unlink($file))
+		unset($knownDatas[$file]);
+	    else
+		error("Couldn't delete file: ", $file);
+	}
+    
+	// scan directory for new items
+	$iterator = new RecursiveDirectoryIterator ($dirToScan);
+	$isDirEmpty = array();
+
+	if ( $iterator ) {
+	    foreach ($iterator as $fileinfo) {
+
+		if($fileinfo->isDot())
+		    continue;
+
+		if (! $fileinfo->isFile())
+		    continue;
+
+		// if the file is new
+		if (! isset ($knownDatas[$fileinfo->getPathname()]) )
+		    $knownDatas[$fileinfo->getPathname()] = array (
+			"foundOn" => time(),
+			"fileMTime" => $fileinfo->getMTime(),
+		    );
+	    }
+	} else
+	    errorExit(2, "Impossible to scan directory: ", $dirToScan);
+
+
+	
+
+	saveDirectoryScannedDatas($dirPath, $knownDatas);
+
+    }
+
+    return $filesToDelete;
+
 }
 
 cprint ("\nHello fucking world!\n");
 
+
+checkDataPath ();
 checkOptions ();
-getFilesToDelete ( getConfig () );
+fileGrimReaper ( getConfig () );
 
 
 
