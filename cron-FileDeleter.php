@@ -259,9 +259,14 @@ function fileGrimReaper ($dirToScan)
 
 		// If the file has NOT been modified since the last scan,
 		// check if it's elligeable for deletion
-		if ($fileMTime == $knownData["fileMTime"])
+		if ($fileMTime == $knownData["fileMTime"]) {
 		    if ($knownData["foundOn"] + $dirParam['duration'] < NOW)
 			$filesToDelete[] = $filePath;
+		} else {
+		    // treat as a new file
+		    $knownDatas[$filePath]["foundOn"] = NOW;
+		    $knownDatas[$filePath]["fileMTime"] = $fileMTime;
+		}
 
 	    } else
 		// the file is no longer there so delete its entry in $KnownDatas
@@ -456,6 +461,14 @@ cprint ();
 
 exit((int)($errorCount > 0));
 
+/*
+ *
+ * TODO: test with several paths
+ *	    prevent scanning of dir before expiracy --> look at modtime of data file before loading
+ *	    test everything
+ *	    add a new file counter
+ *
+ */
 
 // (c) John Wellesz for MikrosImage - September 2011
 ?>
