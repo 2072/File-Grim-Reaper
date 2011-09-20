@@ -4,17 +4,17 @@
 //php cron-FileDeleter.php --show -c=testConfig.txt --dry-run
 
 error_reporting ( E_ALL | E_STRICT );
+ini_set('error_log', dirname(realpath(__FILE__)) . "/errors.txt");
 
 const DEFAULT_CONFIG_FILE = "cron-FileDeleter-paths.txt";
-const ERRORSTR = "ERROR: ";
 
-define ( 'NOW', time());
+define ( 'NOW', time() );
 
 
 function removeDirectory ($path)
 {
-    if (! DRYRUN && ! rmdir($path))
-	error("Couldn't remove directory: ", $path);
+    if (! DRYRUN && ! @rmdir($path))
+	error();
     else
 	return true;
 
@@ -33,11 +33,28 @@ function printUsage ()
     cprint ( "\nUsage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --remove | --show\n");
 }
 
+$errorCount = 0;
 function error ()
 {
+    global $errorCount;
+
+    $errorCount++;
+
     $args = func_get_args();
 
-    fwrite(STDERR, implode($args, "")."\n");
+    $last_error = error_get_last();
+
+    if (! empty($last_error)) {
+
+	if (count($args))
+	    $args[] = "\n\tLast PHP error: ";
+	else
+	    $args[] = "ERROR: ";
+
+	$args[] = $last_error['message'];
+    }
+
+    fwrite(STDERR, implode($args, "")."\n\n");
 }
 
 function getDirectoryDepth($path)
@@ -48,9 +65,10 @@ function getDirectoryDepth($path)
 function errorExit($code)
 {
     $args = func_get_args();
-    unset($args[0]);
+    $args[0] = "FATAL ERROR: ";
 
-    fwrite(STDERR, implode($args, "")."\n");
+    call_user_func_array("error", $args);
+
     exit ($code);
 }
 
@@ -117,10 +135,10 @@ function GetAndSetOptions ()
 
 
     if (SHOW && REMOVE)
-	errorExit(1, ERRORSTR,'--remove and --show options are exclusive!');
+	errorExit(1, '--remove and --show options are exclusive!');
     elseif (! (SHOW || REMOVE)) {
 	printUsage ();
-	errorExit(1, ERRORSTR,"Action is missing!");
+	errorExit(1, "Action is missing!");
     }
 
     if (! empty($setOptions['c']) || ! empty($setOptions['config'])) {
@@ -129,7 +147,7 @@ function GetAndSetOptions ()
 	if ( file_exists( $config ) )
 	    define ('CONFIG', realpath($config));
 	else
-	    errorExit(1, ERRORSTR,"config file '$config' couldn't be found!");
+	    errorExit(1, "config file '$config' couldn't be found!");
     } else
 	define ('CONFIG', false);
 }
@@ -137,10 +155,10 @@ function GetAndSetOptions ()
 function checkDataPath ()
 {
     // find our config path
-    if (! @realpath($_SERVER['argv'][0]) )
+    if (! @realpath(__FILE__) )
 	errorExit(2, 'Impossible to determine script directory...');
     else
-	define ('DATA_PATH', dirname(realpath($_SERVER['argv'][0])) . "/cron-FileDeleter-Datas");
+	define ('DATA_PATH', dirname(realpath(__FILE__)) . "/cron-FileDeleter-Datas");
 
     if (!is_dir(DATA_PATH)) {
 	mkdir(DATA_PATH);
@@ -158,11 +176,11 @@ function getConfig ()
 	if (file_exists($configPath))
 	    $config = file($configPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 	else
-	    errorExit(1, ERRORSTR,'No configuration file provided and no file named "', DEFAULT_CONFIG_FILE, '" found in ', getcwd());
+	    errorExit(1, 'No configuration file provided and no file named "', DEFAULT_CONFIG_FILE, '" found in ', getcwd());
     }
 
     if (count($config) == 0 )
-	errorExit(2, ERRORSTR,'Configuration file is empty!', ' Configuration file used : ', ( isset($configPath) ? realpath($configPath) : CONFIG ));
+	errorExit(2, 'Configuration file is empty!', ' Configuration file used : ', ( isset($configPath) ? realpath($configPath) : CONFIG ));
 
     $directories = array ();
 
@@ -175,7 +193,6 @@ function getConfig ()
 
     return $directories;
 }
-
 
 function getDirectoryScannedDatas ($path)
 {
@@ -215,13 +232,11 @@ function saveDirectoryScannedDatas ($path, $datas)
 
 function fileGrimReaper ($dirToScan)
 {
-    var_dump($dirToScan);
-
     $filesToDelete = array();
 
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
-	cprint("The file Grim Reaper is now considering files in: ", $dirPath, '...', "\n");
+	cprint("Now considering files in: ", $dirPath, '...', "\n");
 
 	// get previous scan datas
 	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
@@ -237,7 +252,7 @@ function fileGrimReaper ($dirToScan)
 	    if (file_exists($filePath)) {
 
 		// get current file mod time
-		if (! $fileMTime = filemtime($filePath)) {
+		if (! $fileMTime = @filemtime($filePath)) {
 		    error("Couldn't get modification time for ", $filePath);
 		    continue;
 		}
@@ -247,7 +262,7 @@ function fileGrimReaper ($dirToScan)
 		if ($fileMTime == $knownData["fileMTime"])
 		    if ($knownData["foundOn"] + $dirParam['duration'] < NOW)
 			$filesToDelete[] = $filePath;
-		
+
 	    } else
 		// the file is no longer there so delete its entry in $KnownDatas
 		// this is where the list is cleaned
@@ -261,24 +276,24 @@ function fileGrimReaper ($dirToScan)
 	 * ##########################
 	 */
 
-	$deletedCounter = 0;
+	$deletedFilesCounter = 0;
 	foreach ($filesToDelete as $file)
 	    if (DRYRUN) {
 
-		$deletedCounter++;
+		$deletedFilesCounter++;
 		//cprint('Would have (--dry-run is set) deleted file: ', $file);
 		$reapedDirectories[dirname($file)] = true;
 
-	    } elseif (unlink($file)) {
+	    } elseif (@unlink($file)) {
 
 		unset($knownDatas[$file]);
-		$deletedCounter++;
+		$deletedFilesCounter++;
 		$reapedDirectories[dirname($file)] = true;
 		cprint($file, " removed.");
 
 	    } else
-		error("Couldn't delete file: ", $file);
-	cprint($deletedCounter, " files were deleted.");
+		error();
+
 
 	/* ################################
 	 * # Scan directory for new items #
@@ -286,13 +301,11 @@ function fileGrimReaper ($dirToScan)
 	 */
 
 	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath),
-                                              RecursiveIteratorIterator::CHILD_FIRST);
+	    RecursiveIteratorIterator::CHILD_FIRST);
 	$isDirEmpty = array();
 	$DirHasChildren = array();
 
 	if ( $iterator ) {
-	    // XXX find a way to detect when directories are skipped due to wrong permission
-	    // these directories will be marked as empty and will fail to be deleted.
 	    foreach ($iterator as $fileinfo) {
 
 		if ($fileinfo->isDir() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
@@ -347,6 +360,7 @@ function fileGrimReaper ($dirToScan)
 	))
 	    error ("uksort() failed.");
 
+	// deleted directories counters
 	$reapedDeletedCounter	= 0;
 	$expiredDeletedCounter	= 0;
 	$deadEndDeletedCounter	= 0;
@@ -354,14 +368,10 @@ function fileGrimReaper ($dirToScan)
 	$DirIsDeadEnd		= array();
 
 	foreach ($DirHasChildren as $path=>$_notused_)
-
-	    // we reap the deepest first, it 
-
 	    // the directory is empty and files were reaped inside it
 	    if ( !$DirHasChildren[$path] && isset($reapedDirectories[$path])) {
 
 		if (! removeDirectory($path) ) {
-		    error("Couldn't remove directory: ", $path);
 		    $failedRemovalCounter++;
 		} else {
 		    //cprint('Removed empty (reaped) directory: ', $path);
@@ -381,10 +391,9 @@ function fileGrimReaper ($dirToScan)
 		}
 
 		// the directory is empty and is older than allowed duration
-	    } elseif (!$DirHasChildren[$path] && (filemtime($path) + $dirParam['duration'] < NOW)) {
+	    } elseif (!$DirHasChildren[$path] && (@filemtime($path) + $dirParam['duration'] < NOW)) {
 
 		if (!removeDirectory($path)) {
-		    error("Couldn't remove directory: ", $path);
 		    $failedRemovalCounter++;
 		} else {
 		    //cprint('Removed emty (old) directory: ', $path);
@@ -401,7 +410,6 @@ function fileGrimReaper ($dirToScan)
 		}
 	    } elseif (isset($DirIsDeadEnd[$path])) {
 		if (!removeDirectory($path)) {
-		    error("Couldn't remove directory: ", $path);
 		    $failedRemovalCounter++;
 		} else {
 		    $deadEndDeletedCounter++;
@@ -417,9 +425,11 @@ function fileGrimReaper ($dirToScan)
 	    }
 
 	cprint (
+	    "\n\n",
+	    $deletedFilesCounter,   " files were removed.\n"			,
 	    $reapedDeletedCounter,  " now-empty directories were removed.\n"	,
-	    $deadEndDeletedCounter, " now-dead-end directories were deleted.\n"	,
-	    $expiredDeletedCounter, " expired-empty directories were deleted.\n"
+	    $deadEndDeletedCounter, " now-dead-end directories were removed.\n"	,
+	    $expiredDeletedCounter, " expired-empty directories were removed.\n"
 	);
 
 	if ($failedRemovalCounter)
@@ -433,7 +443,7 @@ function fileGrimReaper ($dirToScan)
 
 }
 
-cprint ("\nHello fucking world!\n");
+cprint ("\nThe File Grim Reaper greats you!\n");
 
 
 checkDataPath ();
@@ -441,18 +451,11 @@ GetAndSetOptions ();
 fileGrimReaper ( getConfig () );
 
 
+// Add a new line for reqdqbility
+cprint ();
+
+exit((int)($errorCount > 0));
 
 
-// use directory iterator
-
-
-
-cprint ("");
-
-/*  TODO :
- *
- *  add a logging option which will use ob_start() and auto_shutdown options
- *
- */
-
+// (c) John Wellesz for MikrosImage - September 2011
 ?>
