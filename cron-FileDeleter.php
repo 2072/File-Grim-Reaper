@@ -11,6 +11,15 @@ const ERRORSTR = "ERROR: ";
 define ( 'NOW', time());
 
 
+function removeDirectory ($path)
+{
+    if (! DRYRUN && ! rmdir($path))
+	error("Couldn't remove directory: ", $path);
+    else
+	return true;
+
+    return false;
+}
 
 function cprint ()
 {
@@ -29,6 +38,11 @@ function error ()
     $args = func_get_args();
 
     fwrite(STDERR, implode($args, "")."\n");
+}
+
+function getDirectoryDepth($path)
+{
+    return substr_count($path, '/') + substr_count($path, '\\');
 }
 
 function errorExit($code)
@@ -72,7 +86,7 @@ function isDirValid ($name)
     }
 }
 
-function checkOptions ()
+function GetAndSetOptions ()
 {
     $longOptions = array (
 	"config::",
@@ -95,9 +109,10 @@ function checkOptions ()
     else
 	define ('REMOVE', false);
 
-    if (isset($setOptions['d']) || isset($setOptions['dry-run']))
+    if (isset($setOptions['d']) || isset($setOptions['dry-run'])) {
 	define ('DRYRUN', true);
-    else
+	cprint ("--DRY RUN--");
+    } else
 	define ('DRYRUN', false);
 
 
@@ -175,10 +190,12 @@ function getDirectoryScannedDatas ($path)
 
 	$data = unserialize (file_get_contents($dataFileName));
 
-	if ($data)
+	if (is_array($data))
 	    return $data;
-	else
+	else {
 	    error('Error loading data for directory: ', $path);
+	    return false;
+	}
     } else
 	return array ();
 }
@@ -204,11 +221,17 @@ function fileGrimReaper ($dirToScan)
 
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
-	cprint("The file Grim Reaper is now considering files in: ", $dirPath);
-	// get previous scan datas
-	$knownDatas = getDirectoryScannedDatas($dirPath);
+	cprint("The file Grim Reaper is now considering files in: ", $dirPath, '...', "\n");
 
-	// Scan existing entries
+	// get previous scan datas
+	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
+	    continue;
+
+	/* #########################
+	 * # Scan existing entries #
+	 * #########################
+	 */
+
 	foreach ($knownDatas as $filePath=>$knownData) {
 	    // if the file is still there
 	    if (file_exists($filePath)) {
@@ -233,39 +256,62 @@ function fileGrimReaper ($dirToScan)
 
 	$reapedDirectories = array(); // used to remove empty dirs after delting files
 
-	// Here comes the file Grim Reaper
+	/* ##########################
+	 * # Reap the expired files #
+	 * ##########################
+	 */
+
+	$deletedCounter = 0;
 	foreach ($filesToDelete as $file)
 	    if (DRYRUN) {
 
-		cprint('Would have (--dry-run is set) deleted file: ', $file);
+		$deletedCounter++;
+		//cprint('Would have (--dry-run is set) deleted file: ', $file);
 		$reapedDirectories[dirname($file)] = true;
 
 	    } elseif (unlink($file)) {
 
 		unset($knownDatas[$file]);
+		$deletedCounter++;
 		$reapedDirectories[dirname($file)] = true;
-		cprint($file, " was deleted.");
+		cprint($file, " removed.");
 
 	    } else
 		error("Couldn't delete file: ", $file);
+	cprint($deletedCounter, " files were deleted.");
 
-	// scan directory for new items
+	/* ################################
+	 * # Scan directory for new items #
+	 * ################################
+	 */
+
 	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath),
                                               RecursiveIteratorIterator::CHILD_FIRST);
 	$isDirEmpty = array();
+	$DirHasChildren = array();
 
 	if ( $iterator ) {
 	    // XXX find a way to detect when directories are skipped due to wrong permission
+	    // these directories will be marked as empty and will fail to be deleted.
 	    foreach ($iterator as $fileinfo) {
 
-		if ($fileinfo->isDir() && ! isset($isDirEmpty[$fileinfo->getPathname()]) )
-		    $isDirEmpty[$fileinfo->getPath()] = true;
+		if ($fileinfo->isDir() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
+		    // Mark the directory as empty the first time we see it
+		    $DirHasChildren[$fileinfo->getPathname()] = 0;
 
+		}
+
+		// Count elements
+		if (! isset($DirHasChildren[$fileinfo->getPath()]))
+		    $DirHasChildren[$fileinfo->getPath()] = 1;
+		else
+		    $DirHasChildren[$fileinfo->getPath()]++;
 
 		if (! $fileinfo->isFile())
 		    continue;
 
-		$isDirEmpty[$fileinfo->getPath()] = false;
+		// Mark the parent directory as not empty
+		$DirHasChildren[$fileinfo->getPath()] = 'file';
 
 		// if the file is new
 		if (! isset ($knownDatas[$fileinfo->getPathname()]) )
@@ -277,34 +323,107 @@ function fileGrimReaper ($dirToScan)
 	} else
 	    errorExit(2, "Impossible to scan directory: ", $dirToScan);
 
+	/* ################################
+	 * #  Removed orphaned directory  #
+	 * ################################
+	 */
 
-	unset ($isDirEmpty[$dirPath]);
+	// Protect teh base directory from deletion
+	$DirHasChildren[$dirPath] = 'file';
 
-	// remove empty directories left behind after reaping their content or expired empty ones
-	// XXX need to do this child first... just sort this list in a clever way (the one with the most '/' first...
-	foreach ($isDirEmpty as $path=>$isEmpty)
+
+	// sort the array using the path depth, the deepest first
+	if (!
+	    uksort ($DirHasChildren, function ($a, $b) {
+		if (getDirectoryDepth($a) == getDirectoryDepth($b))
+		    return 0;
+
+		if (getDirectoryDepth($a) > getDirectoryDepth($b))
+		    return -1;
+
+		if (getDirectoryDepth($a) < getDirectoryDepth($b))
+		    return 1;
+	    }
+	))
+	    error ("uksort() failed.");
+
+	$reapedDeletedCounter	= 0;
+	$expiredDeletedCounter	= 0;
+	$deadEndDeletedCounter	= 0;
+	$failedRemovalCounter	= 0;
+	$DirIsDeadEnd		= array();
+
+	foreach ($DirHasChildren as $path=>$_notused_)
+
+	    // we reap the deepest first, it 
+
 	    // the directory is empty and files were reaped inside it
-	    if ($isEmpty && isset($reapedDirectories[$path])) {
+	    if ( !$DirHasChildren[$path] && isset($reapedDirectories[$path])) {
 
-		if (DRYRUN)
-		    cprint('Would have (--dry-run is set) removed (reaped) directory: ', $path);
-		elseif (!rmdir($path))
+		if (! removeDirectory($path) ) {
 		    error("Couldn't remove directory: ", $path);
-		else
-		    cprint('Removed empty (reaped) directory: ', $path);
+		    $failedRemovalCounter++;
+		} else {
+		    //cprint('Removed empty (reaped) directory: ', $path);
+		    $reapedDeletedCounter++;
+
+		    // decrease parent children number, this will be enough to trigger a deletion (since we go from
+		    // the child to the parent) but not a deletion of a parent directory containing only directories.
+		    if (--$DirHasChildren[dirname($path)] < 0)
+			error("Impossible Error #3: too many elements: ", $DirHasChildren[dirname($path)]);
+
+		    // if the directory is now empty, mark it for deletion
+		    if (! $DirHasChildren[dirname($path)])
+			$DirIsDeadEnd[dirname($path)] = true;
+
+
+
+		}
 
 		// the directory is empty and is older than allowed duration
-	    } elseif ($isEmpty && (filemtime($path) + $dirParam['duration'] < NOW)) {
+	    } elseif (!$DirHasChildren[$path] && (filemtime($path) + $dirParam['duration'] < NOW)) {
 
-		if (DRYRUN)
-		    cprint('Would have (--dry-run is set) removed (old) directory: ', $path);
-		else
-		    if (!rmdir($path))
-			error("couldn't remove directory: ", $path);
-		    else
-			cprint('Removed emty (old) directory: ', $path);
+		if (!removeDirectory($path)) {
+		    error("Couldn't remove directory: ", $path);
+		    $failedRemovalCounter++;
+		} else {
+		    //cprint('Removed emty (old) directory: ', $path);
+		    $expiredDeletedCounter++;
+
+		    // decrease parent children number, this won't be enough to trigger a deletion since we just changed the directory modtime.
+		    if (--$DirHasChildren[dirname($path)] < 0)
+			error("Impossible Error #4: too many elements: ", $DirHasChildren[dirname($path)]);
+
+		    // if the directory is now empty, mark it for deletion
+		    if (! $DirHasChildren[dirname($path)])
+			$DirIsDeadEnd[dirname($path)] = true;
+
+		}
+	    } elseif (isset($DirIsDeadEnd[$path])) {
+		if (!removeDirectory($path)) {
+		    error("Couldn't remove directory: ", $path);
+		    $failedRemovalCounter++;
+		} else {
+		    $deadEndDeletedCounter++;
+
+		    if (--$DirHasChildren[dirname($path)] < 0)
+			error("Impossible Error #5: too many elements: ", $DirHasChildren[dirname($path)]);
+
+		    // if the directory is now empty, mark it for deletion
+		    if (! $DirHasChildren[dirname($path)])
+			$DirIsDeadEnd[dirname($path)] = true;
+
+		}
 	    }
-	
+
+	cprint (
+	    $reapedDeletedCounter,  " now-empty directories were removed.\n"	,
+	    $deadEndDeletedCounter, " now-dead-end directories were deleted.\n"	,
+	    $expiredDeletedCounter, " expired-empty directories were deleted.\n"
+	);
+
+	if ($failedRemovalCounter)
+	    error ($failedRemovalCounter, " directory couldn't be removed.");
 
 	saveDirectoryScannedDatas($dirPath, $knownDatas);
 
@@ -318,7 +437,7 @@ cprint ("\nHello fucking world!\n");
 
 
 checkDataPath ();
-checkOptions ();
+GetAndSetOptions ();
 fileGrimReaper ( getConfig () );
 
 
