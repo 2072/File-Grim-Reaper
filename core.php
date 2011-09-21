@@ -14,9 +14,23 @@ const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 define ( 'NOW', time() );
 
 
+function removeFile ($path)
+{
+    if (! DRYRUN && ! SHOW && ! @unlink($path))
+	error();
+    else {
+	if (! SHOW)
+	    cprint($path, " removed.");
+
+	return true;
+    }
+
+    return false;
+}
+
 function removeDirectory ($path)
 {
-    if (! DRYRUN && ! @rmdir($path))
+    if (! DRYRUN && ! SHOW && ! @rmdir($path))
 	error();
     else
 	return true;
@@ -132,7 +146,7 @@ function GetAndSetOptions ()
 
     if (isset($setOptions['d']) || isset($setOptions['dry-run'])) {
 	define ('DRYRUN', true);
-	cprint ("--DRY RUN--");
+	cprint ("== DRY-RUN MODE ==");
     } else
 	define ('DRYRUN', false);
 
@@ -222,6 +236,12 @@ function getDirectoryScannedDatas ($path)
 
 function saveDirectoryScannedDatas ($path, $datas)
 {
+    if (SHOW || DRYRUN) {
+	cprint("Changes not saved, showing only.");
+	return;
+    }
+	
+
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
     if (! $dataFileName)
@@ -235,12 +255,11 @@ function saveDirectoryScannedDatas ($path, $datas)
 
 function fileGrimReaper ($dirToScan)
 {
-    $filesToDelete = array();
 
-    cprint ("\nThe File Grim Reaper greats you!\n");
+    cprint ("\nThe File Grim Reaper greats you!");
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
-	cprint("Now considering files in: ", $dirPath, '...', "\n");
+	cprint("\nNow considering files in: ", $dirPath, '...', "\n");
 
 	// get previous scan datas
 	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
@@ -251,6 +270,8 @@ function fileGrimReaper ($dirToScan)
 	 * #########################
 	 */
 
+	$filesToDelete = array();
+	$ModifiedFilesCounter	= 0;
 	foreach ($knownDatas as $filePath=>$knownData) {
 	    // if the file is still there
 	    if (file_exists($filePath)) {
@@ -270,6 +291,7 @@ function fileGrimReaper ($dirToScan)
 		    // treat as a new file
 		    $knownDatas[$filePath]["foundOn"] = NOW;
 		    $knownDatas[$filePath]["fileMTime"] = $fileMTime;
+		    $ModifiedFilesCounter++;
 		}
 
 	    } else
@@ -287,21 +309,11 @@ function fileGrimReaper ($dirToScan)
 
 	$deletedFilesCounter = 0;
 	foreach ($filesToDelete as $file)
-	    if (DRYRUN) {
-
-		$deletedFilesCounter++;
-		//cprint('Would have (--dry-run is set) deleted file: ', $file);
-		$reapedDirectories[dirname($file)] = true;
-
-	    } elseif (@unlink($file)) {
-
-		unset($knownDatas[$file]);
+	    if (removeFile($file)) {
+		if (REMOVE) unset($knownDatas[$file]);
 		$deletedFilesCounter++;
 		$reapedDirectories[dirname($file)] = true;
-		cprint($file, " removed.");
-
-	    } else
-		error();
+	    }
 
 
 	/* ################################
@@ -314,6 +326,7 @@ function fileGrimReaper ($dirToScan)
 	$isDirEmpty = array();
 	$DirHasChildren = array();
 
+	$NewFilesCounter	= 0;
 	if ( $iterator ) {
 	    foreach ($iterator as $fileinfo) {
 
@@ -336,11 +349,13 @@ function fileGrimReaper ($dirToScan)
 		$DirHasChildren[$fileinfo->getPath()] = 'file';
 
 		// if the file is new
-		if (! isset ($knownDatas[$fileinfo->getPathname()]) )
+		if (! isset ($knownDatas[$fileinfo->getPathname()]) ) {
 		    $knownDatas[$fileinfo->getPathname()] = array (
 			"foundOn" => time(),
 			"fileMTime" => $fileinfo->getMTime(),
 		    );
+		    $NewFilesCounter++;
+		}
 	    }
 	} else
 	    errorExit(2, "Impossible to scan directory: ", $dirToScan);
@@ -394,9 +409,6 @@ function fileGrimReaper ($dirToScan)
 		    // if the directory is now empty, mark it for deletion
 		    if (! $DirHasChildren[dirname($path)])
 			$DirIsDeadEnd[dirname($path)] = true;
-
-
-
 		}
 
 		// the directory is empty and is older than allowed duration
@@ -434,12 +446,18 @@ function fileGrimReaper ($dirToScan)
 	    }
 
 	cprint (
-	    "\n\n",
-	    $deletedFilesCounter,   " files were removed.\n"			,
-	    $reapedDeletedCounter,  " now-empty directories were removed.\n"	,
-	    $deadEndDeletedCounter, " now-dead-end directories were removed.\n"	,
-	    $expiredDeletedCounter, " expired-empty directories were removed.\n"
+	    "\n",
+	    $ModifiedFilesCounter,  " files were modified.\n"			,
+	    $NewFilesCounter,	    " files were new.\n"			,
+	    $deletedFilesCounter,   (REMOVE?" files were removed.\n"			:  " files have expired.")
 	);
+
+	if (! SHOW)
+	    cprint (
+		$reapedDeletedCounter,  " now-empty directories were removed.\n" 	,
+		$expiredDeletedCounter, " expired-empty directories were removed.\n"	,
+		$deadEndDeletedCounter, " now-dead-end directories were removed." 
+	    );
 
 	if ($failedRemovalCounter)
 	    error ($failedRemovalCounter, " directory couldn't be removed.");
