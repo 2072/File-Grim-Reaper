@@ -1,12 +1,15 @@
 <?php
 // (c) John Wellesz for MikrosImage - September 2011
 
-//php cron-FileDeleter.php --show -c=testConfig.txt --dry-run
+//php FileGrimReaper.php --show -c=testConfig.txt --dry-run
+
+if (! defined("PROPER_USAGE"))
+    die("Incorrect usage, you cannot execute this file directly");
 
 error_reporting ( E_ALL | E_STRICT );
 ini_set('error_log', dirname(realpath(__FILE__)) . "/errors.txt");
 
-const DEFAULT_CONFIG_FILE = "cron-FileDeleter-paths.txt";
+const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
 define ( 'NOW', time() );
 
@@ -158,7 +161,7 @@ function checkDataPath ()
     if (! @realpath(__FILE__) )
 	errorExit(2, 'Impossible to determine script directory...');
     else
-	define ('DATA_PATH', dirname(realpath(__FILE__)) . "/cron-FileDeleter-Datas");
+	define ('DATA_PATH', dirname(realpath(__FILE__)) . "/FileGrimReaper-Datas");
 
     if (!is_dir(DATA_PATH)) {
 	mkdir(DATA_PATH);
@@ -234,6 +237,7 @@ function fileGrimReaper ($dirToScan)
 {
     $filesToDelete = array();
 
+    cprint ("\nThe File Grim Reaper greats you!\n");
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
 	cprint("Now considering files in: ", $dirPath, '...', "\n");
@@ -448,7 +452,6 @@ function fileGrimReaper ($dirToScan)
 
 }
 
-cprint ("\nThe File Grim Reaper greats you!\n");
 
 
 checkDataPath ();
