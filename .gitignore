@@ -1,3 +1,5 @@
 
 *.swp
 /cron-FileDeleter-Datas
+/FileGrimReaper-paths.txt
+/FileGrimReaper-Datas
