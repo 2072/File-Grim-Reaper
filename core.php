@@ -12,7 +12,7 @@ ini_set('error_log', dirname(realpath(__FILE__)) . "/errors.txt");
 const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
 define ( 'NOW', time() );
-
+$LOGFILEPATH;
 
 function removeFile ($path)
 {
@@ -43,6 +43,10 @@ function cprint ()
     $args = func_get_args();
 
     fwrite(STDOUT, implode($args, "")."\n");
+
+    global $LOGFILEPATH;
+    if (LOGGING && !empty($LOGFILEPATH))
+	error_log(implode($args, "")."\n", 3, $LOGFILEPATH);
 }
 
 function printUsage ()
@@ -72,6 +76,10 @@ function error ()
     }
 
     fwrite(STDERR, implode($args, "")."\n\n");
+
+    global $LOGFILEPATH;
+    if (LOGGING && !empty($LOGFILEPATH))
+	error_log(implode($args, "")."\n\n", 3, $LOGFILEPATH);
 }
 
 function getDirectoryDepth($path)
@@ -127,10 +135,11 @@ function GetAndSetOptions ()
 	"config::",
 	"show",
 	"remove",
+	"logging",
 	"dry-run"
     );
 
-    $setOptions = getopt("c::srd", $longOptions);
+    $setOptions = getopt("c::srdl", $longOptions);
 
 
     if (isset($setOptions['s']) || isset($setOptions['show']))
@@ -138,6 +147,10 @@ function GetAndSetOptions ()
     else
 	define ('SHOW', false);
 
+    if (isset($setOptions['l']) || isset($setOptions['logging']))
+	define ('LOGGING', true);
+    else
+	define ('LOGGING', false);
 
     if (isset($setOptions['r']) || isset($setOptions['remove']))
 	define ('REMOVE', true);
@@ -181,6 +194,16 @@ function checkDataPath ()
 	mkdir(DATA_PATH);
 	cprint('Created data folder: ', DATA_PATH);
     }
+
+    if (LOGGING) {
+	if (!is_dir(DATA_PATH."/Logs")) {
+	    mkdir(DATA_PATH."/Logs");
+	    cprint('Created log folder: ', DATA_PATH."/Logs");
+	}
+
+	define ('LOGS_PATH', DATA_PATH."/Logs");
+	define ('LOG_HEADER', date("[Y-m-d H:i:s] "));
+    }
 }
 
 function getConfig ()
@@ -215,6 +238,11 @@ function getDirectoryScannedDatas ($path)
 {
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
+    if (LOGGING) {
+	global $LOGFILEPATH;
+	$LOGFILEPATH = LOGS_PATH . "/$dataFileName.log";
+    }
+
     if (! $dataFileName)
 	errorExit(2, 'Impossible error #1: preg_replace() failed on: ', $path);
 
@@ -236,11 +264,13 @@ function getDirectoryScannedDatas ($path)
 
 function saveDirectoryScannedDatas ($path, $datas)
 {
+    global $LOGFILEPATH;
+
     if (SHOW || DRYRUN) {
 	cprint("Changes not saved, showing only.");
+	$LOGFILEPATH = false;
 	return;
     }
-	
 
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
@@ -251,19 +281,25 @@ function saveDirectoryScannedDatas ($path, $datas)
 
     if (! file_put_contents($dataFileName, serialize($datas), LOCK_EX))
 	error("Couldn't save scanned datas in: ", $dataFileName);
+
+
+    $LOGFILEPATH = false;
 }
 
 function fileGrimReaper ($dirToScan)
 {
-
     cprint ("\nThe File Grim Reaper greats you!");
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
-	cprint("\nNow considering files in: ", $dirPath, '...', "\n");
 
 	// get previous scan datas
 	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
 	    continue;
+
+	if (LOGGING)
+	    cprint("\nStarted on: ", LOG_HEADER);
+
+	cprint("\nNow considering files in: ", $dirPath, '...', "\n");
 
 	/* #########################
 	 * # Scan existing entries #
@@ -472,8 +508,8 @@ function fileGrimReaper ($dirToScan)
 
 
 
-checkDataPath ();
 GetAndSetOptions ();
+checkDataPath ();
 fileGrimReaper ( getConfig () );
 
 
@@ -487,7 +523,6 @@ exit((int)($errorCount > 0));
  * TODO: test with several paths
  *	    prevent scanning of dir before expiracy --> look at modtime of data file before loading
  *	    test everything
- *	    add a new file counter
  *
  */
 
