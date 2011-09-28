@@ -42,11 +42,13 @@ function cprint ()
 {
     $args = func_get_args();
 
-    fwrite(STDOUT, implode($args, "")."\n");
+    $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n";
+
+    fwrite(STDOUT, $toPrint);
 
     global $LOGFILEPATH;
     if (LOGGING && !empty($LOGFILEPATH))
-	error_log(implode($args, "")."\n", 3, $LOGFILEPATH);
+	error_log($toPrint, 3, $LOGFILEPATH);
 }
 
 function printUsage ()
@@ -75,11 +77,12 @@ function error ()
 	$args[] = $last_error['message'];
     }
 
-    fwrite(STDERR, implode($args, "")."\n\n");
+    $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n\r\n";
+    fwrite(STDERR, $toPrint);
 
     global $LOGFILEPATH;
     if (LOGGING && !empty($LOGFILEPATH))
-	error_log(implode($args, "")."\n\n", 3, $LOGFILEPATH);
+	error_log($toPrint, 3, $LOGFILEPATH);
 }
 
 function getDirectoryDepth($path)
@@ -296,10 +299,10 @@ function fileGrimReaper ($dirToScan)
 	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
 	    continue;
 
-	if (LOGGING)
-	    cprint("\nStarted on: ", LOG_HEADER);
 
-	cprint("\nNow considering files in: ", $dirPath, '...', "\n");
+	// The log file is named after the directory being checked so...
+	if (!LOGGING)
+	    cprint("\nNow considering files in: ", $dirPath, '...', "\n");
 
 	/* #########################
 	 * # Scan existing entries #
@@ -481,19 +484,32 @@ function fileGrimReaper ($dirToScan)
 		}
 	    }
 
-	cprint (
-	    "\n",
-	    $ModifiedFilesCounter,  " files were modified.\n"			,
-	    $NewFilesCounter,	    " files were new.\n"			,
-	    $deletedFilesCounter,   (REMOVE?" files were removed.\n"			:  " files have expired.")
-	);
+	if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter
+	    || $expiredDeletedCounter || $deadEndDeletedCounter)
+	{
+	    // Print the date if writing to a log file
+	    if (LOGGING)
+		cprint("\nStarted on: ", LOG_HEADER);
 
-	if (! SHOW)
 	    cprint (
-		$reapedDeletedCounter,  " now-empty directories were removed.\n" 	,
-		$expiredDeletedCounter, " expired-empty directories were removed.\n"	,
-		$deadEndDeletedCounter, " now-dead-end directories were removed." 
+		"\n",
+		$ModifiedFilesCounter,  " files were modified.\n"				    ,
+		$NewFilesCounter,	" files were new.\n"					    ,
+		$deletedFilesCounter,   (REMOVE?" files were removed.\n" :  " files have expired.")
 	    );
+
+	    if (! SHOW)
+		cprint (
+		    $reapedDeletedCounter,  " now-empty directories were removed.\n"		    ,
+		    $expiredDeletedCounter, " expired-empty directories were removed.\n"	    ,
+		    $deadEndDeletedCounter, " now-dead-end directories were removed." 
+		);
+
+	    // Add a new line for readability
+	    cprint ();
+
+	} elseif (! LOGGING)
+	    cprint ("Nothing to do.");
 
 	if ($failedRemovalCounter)
 	    error ($failedRemovalCounter, " directory couldn't be removed.");
@@ -513,8 +529,6 @@ checkDataPath ();
 fileGrimReaper ( getConfig () );
 
 
-// Add a new line for reqdqbility
-cprint ();
 
 exit((int)($errorCount > 0));
 
