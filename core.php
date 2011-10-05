@@ -3,6 +3,9 @@
 
 //php FileGrimReaper.php --show -c=testConfig.txt --dry-run
 
+const VERSION = 1;
+const REVISION = 0;
+
 if (! defined("PROPER_USAGE"))
     die("Incorrect usage, you cannot execute this file directly");
 
@@ -103,7 +106,7 @@ function errorExit($code)
 function isDirValid ($name)
 {
     // format should be something like BLABLABLA__TO_KEEP_XX_LENGTH
-    // handle handle the following length : YEAR(S), MONTH(S), DAY(S), HOUR(S), MINUTE(S)
+    // handle the following length : YEAR(S), MONTH(S), DAY(S), HOUR(S), MINUTE(S)
 
     $matches = array();
     $badDir = false;
@@ -367,7 +370,7 @@ function fileGrimReaper ($dirToScan)
 
 	$NewFilesCounter	= 0;
 	if ( $iterator ) {
-	    foreach ($iterator as $fileinfo) {
+	    foreach ($iterator as $file=>$fileinfo) {
 
 		if ($fileinfo->isDir() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
 		    // Mark the directory as empty the first time we see it
@@ -381,8 +384,13 @@ function fileGrimReaper ($dirToScan)
 		else
 		    $DirHasChildren[$fileinfo->getPath()]++;
 
-		if (! $fileinfo->isFile())
+		if (! $fileinfo->isFile()) {
+
+		    if (! $fileinfo->isDir())
+			error("'$file' thinks he's immortal... Can you show it otherwise?");
+
 		    continue;
+		}
 
 		// Mark the parent directory as not empty
 		$DirHasChildren[$fileinfo->getPath()] = 'file';
