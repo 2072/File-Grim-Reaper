@@ -285,19 +285,17 @@ function saveDirectoryScannedDatas ($path, $datas)
 
     $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
 
-
-
     $tempFileName = $dataFileName . sprintf("_%X", crc32(microtime()));
     $serializedDatas = serialize($datas);
 
-    // Write the datas in a temporary file and really check it's complete
+    // Write the data in a temporary file and really check it's complete
     if ( file_put_contents($tempFileName, $serializedDatas) !== strlen($serializedDatas)
 	|| filesize($tempFileName)			    !== strlen($serializedDatas) )
 
 	error("Couldn't write scanned datas in: ", $tempFileName);
     else {
 	// If all was written then replace the original file
-	// This prevents to damage the original file if the disk is full
+	// This prevents to damage the original file if the disk happened to be full
 	if (! rename($tempFileName, $dataFileName))
 	    error("Couldn't save scanned datas in: ", $dataFileName);
     }
@@ -402,7 +400,7 @@ function fileGrimReaper ($dirToScan)
 		if (! $fileinfo->isFile()) {
 
 		    if (! $fileinfo->isDir())
-			error("'$file' thinks he's immortal... Can you show it otherwise?");
+			error("'$file' is immortal... It needs renaming so it can be reaped when its time comes.");
 
 		    continue;
 		}
