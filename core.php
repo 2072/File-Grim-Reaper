@@ -285,8 +285,23 @@ function saveDirectoryScannedDatas ($path, $datas)
 
     $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
 
-    if (! file_put_contents($dataFileName, serialize($datas), LOCK_EX))
-	error("Couldn't save scanned datas in: ", $dataFileName);
+
+
+    $tempFileName = $dataFileName . sprintf("_%X", crc32(microtime()));
+    $serializedDatas = serialize($datas);
+
+    // Write the datas in a temporary file and really check it's complete
+    if ( file_put_contents($tempFileName, $serializedDatas) !== strlen($serializedDatas)
+	|| filesize($tempFileName)			    !== strlen($serializedDatas) )
+
+	error("Couldn't write scanned datas in: ", $tempFileName);
+    else {
+	// If all was written then replace the original file
+	// This prevents to damage the original file if the disk is full
+	if (! rename($tempFileName, $dataFileName))
+	    error("Couldn't save scanned datas in: ", $dataFileName);
+    }
+    
 
 
     $LOGFILEPATH = false;
@@ -542,9 +557,6 @@ exit((int)($errorCount > 0));
 
 /*
  *
- * TODO: test with several paths
- *	    prevent scanning of dir before expiracy --> look at modtime of data file before loading
- *	    test everything
  *
  */
 
