@@ -9,12 +9,15 @@ const REVISION = 0;
 if (! defined("PROPER_USAGE"))
     die("Incorrect usage, you cannot execute this file directly");
 
+define ('UNAME', php_uname('n'));
 error_reporting ( E_ALL | E_STRICT );
-ini_set('error_log', dirname(realpath(__FILE__)) . "/errors.txt");
+ini_set('error_log', dirname(realpath(__FILE__)) . "/".UNAME."_errors.txt");
 
 const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
 define ( 'NOW', time() );
+
+
 $LOGFILEPATH;
 
 function removeFile ($path)
@@ -246,13 +249,13 @@ function getDirectoryScannedDatas ($path)
 
     if (LOGGING) {
 	global $LOGFILEPATH;
-	$LOGFILEPATH = LOGS_PATH . "/$dataFileName.log";
+	$LOGFILEPATH = LOGS_PATH . "/".UNAME."_$dataFileName.log";
     }
 
     if (! $dataFileName)
 	errorExit(2, 'Impossible error #1: preg_replace() failed on: ', $path);
 
-    $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
+    $dataFileName = DATA_PATH . '/'. UNAME . '_' . $dataFileName . '.data.serialized';
 
     if (file_exists($dataFileName)) {
 
@@ -283,7 +286,7 @@ function saveDirectoryScannedDatas ($path, $datas)
     if (! $dataFileName)
 	errorExit(2, 'Impossible error #2: preg_replace() failed on: ', $path);
 
-    $dataFileName = DATA_PATH . '/' . $dataFileName . '.data.serialised';
+    $dataFileName = DATA_PATH . '/'. UNAME . '_' . $dataFileName . '.data.serialized';
 
     $tempFileName = $dataFileName . sprintf("_%X", crc32(microtime()));
     $serializedDatas = serialize($datas);
