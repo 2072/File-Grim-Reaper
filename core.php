@@ -53,13 +53,13 @@ function cprint ()
     fwrite(STDOUT, $toPrint);
 
     global $LOGFILEPATH;
-    if (LOGGING && !empty($LOGFILEPATH))
+    if (defined("LOGGING") && LOGGING && !empty($LOGFILEPATH))
 	error_log($toPrint, 3, $LOGFILEPATH);
 }
 
 function printUsage ()
 {
-    cprint ( "\nUsage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --remove | --show\n");
+    cprint ( "File Grim Reaper", " (Version ",VERSION,".",REVISION,")", "\nUsage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --remove | --show\n");
 }
 
 $errorCount = 0;
@@ -87,7 +87,7 @@ function error ()
     fwrite(STDERR, $toPrint);
 
     global $LOGFILEPATH;
-    if (LOGGING && !empty($LOGFILEPATH))
+    if (defined("LOGGING") && LOGGING && !empty($LOGFILEPATH))
 	error_log($toPrint, 3, $LOGFILEPATH);
 }
 

@@ -7,5 +7,4 @@ if (! version_compare(PHP_VERSION, '5.3.8', '>='))
    
 include (dirname(__FILE__) . "/core.php");
 
-echo "test";
 ?>
