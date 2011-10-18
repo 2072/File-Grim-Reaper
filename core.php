@@ -7,7 +7,7 @@ const VERSION = 1;
 const REVISION = 0;
 
 if (! defined("PROPER_USAGE"))
-    die("Incorrect usage, you cannot execute this file directly");
+    die("Incorrect usage, you cannot execute this file directly!");
 
 define ('UNAME', php_uname('n'));
 error_reporting ( E_ALL | E_STRICT );
@@ -25,8 +25,8 @@ function removeFile ($path)
     if (! DRYRUN && ! SHOW && ! @unlink($path))
 	error();
     else {
-	if (! SHOW)
-	    cprint($path, " removed.");
+	//if (! SHOW)
+	//    cprint($path, " removed.");
 
 	return true;
     }
@@ -310,10 +310,11 @@ function saveDirectoryScannedDatas ($path, $datas)
 
 function fileGrimReaper ($dirToScan)
 {
-    cprint ("\nThe File Grim Reaper greats you!");
+    cprint ("\nThe File Grim Reaper greats you!\n");
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
 
+	$start = microtime(true);
 	// get previous scan datas
 	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
 	    continue;
@@ -358,17 +359,19 @@ function fileGrimReaper ($dirToScan)
 		unset ($knownDatas[$filePath]);
 	}
 
-	$reapedDirectories = array(); // used to remove empty dirs after delting files
+	$reapedDirectories = array(); // used to remove empty dirs after deleting files
 
 	/* ##########################
 	 * # Reap the expired files #
 	 * ##########################
 	 */
 
+	$deletedFileList = array();
 	$deletedFilesCounter = 0;
 	foreach ($filesToDelete as $file)
 	    if (removeFile($file)) {
 		if (REMOVE) unset($knownDatas[$file]);
+		$deletedFileList[] = $file;
 		$deletedFilesCounter++;
 		$reapedDirectories[dirname($file)] = true;
 	    }
@@ -508,29 +511,39 @@ function fileGrimReaper ($dirToScan)
 		}
 	    }
 
+	$end = microtime(true);
+
+	/* ################################
+	 * #   Report/Log what happened	  #
+	 * ################################
+	 */
+
 	if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter
 	    || $expiredDeletedCounter || $deadEndDeletedCounter)
 	{
 	    // Print the date if writing to a log file
 	    if (LOGGING)
-		cprint("\nStarted on: ", LOG_HEADER);
+		cprint("Started on: ", LOG_HEADER, "\n");
 
-	    cprint (
-		"\n",
-		$ModifiedFilesCounter,  " files were modified.\n"				    ,
-		$NewFilesCounter,	" files were new.\n"					    ,
-		$deletedFilesCounter,   (REMOVE?" files were removed.\n" :  " files have expired.")
-	    );
+	    foreach ($deletedFileList as $file)
+		cprint ('"', $file, '"', " removed.");
 
-	    if (! SHOW)
-		cprint (
-		    $reapedDeletedCounter,  " now-empty directories were removed.\n"		    ,
-		    $expiredDeletedCounter, " expired-empty directories were removed.\n"	    ,
-		    $deadEndDeletedCounter, " now-dead-end directories were removed." 
-		);
+	    if ($deletedFilesCounter)
+		// Add a new line for readability if we deleted files
+		cprint();
 
-	    // Add a new line for readability
-	    cprint ();
+	    if ($ModifiedFilesCounter)	cprint ($ModifiedFilesCounter,  " files were modified.");
+	    if ($NewFilesCounter)	cprint ($NewFilesCounter,	" files were new.");
+	    if ($deletedFilesCounter)	cprint ($deletedFilesCounter,   (REMOVE?" files were removed." :  " files have expired."));
+
+	    if (! SHOW) {
+		if ($reapedDeletedCounter)	cprint ($reapedDeletedCounter,  " now-empty directories were removed.");
+		if ($expiredDeletedCounter)	cprint ($expiredDeletedCounter, " expired-empty directories were removed.");
+		if ($deadEndDeletedCounter)	cprint ($deadEndDeletedCounter, " now-dead-end directories were removed.");
+	    }
+
+	    cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
+	    cprint ('---------------------------------');
 
 	} elseif (! LOGGING)
 	    cprint ("Nothing to do.");
