@@ -75,7 +75,19 @@ function cprint ()
 
 function printUsage ()
 {
-    cprint ( "File Grim Reaper", " (Version ",VERSION,".",REVISION,")", "\nUsage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --remove | --show\n");
+    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --remove | --show\n");
+
+    
+}
+
+function printHeader ()
+{
+    cprint (
+	"\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011 John Wellesz\n\n",
+	"\tThis program comes with ABSOLUTELY NO WARRANTY.\n",
+	"\tThis is free software, and you are welcome to redistribute it\n",
+	"\tunder certain conditions; see the provided GPL.txt for details.\n"
+    );
 }
 
 $errorCount = 0;
@@ -326,8 +338,6 @@ function saveDirectoryScannedDatas ($path, $datas)
 
 function fileGrimReaper ($dirToScan)
 {
-    cprint ("\nThe File Grim Reaper greats you!\n");
-
     foreach ($dirToScan as $dirPath=>$dirParam) {
 
 	$start = microtime(true);
@@ -576,6 +586,7 @@ function fileGrimReaper ($dirToScan)
 }
 
 
+printHeader();
 
 GetAndSetOptions ();
 checkDataPath ();
