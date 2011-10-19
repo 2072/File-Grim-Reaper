@@ -356,7 +356,8 @@ function fileGrimReaper ($dirToScan)
 	 */
 
 	$filesToDelete = array();
-	$ModifiedFilesCounter	= 0;
+	$ModifiedFilesCounter	    = 0;
+	$DisappearedFilesCounter    = 0;
 	foreach ($knownDatas as $filePath=>$knownData) {
 	    // if the file is still there
 	    if (file_exists($filePath)) {
@@ -379,10 +380,12 @@ function fileGrimReaper ($dirToScan)
 		    $ModifiedFilesCounter++;
 		}
 
-	    } else
+	    } else {
 		// the file is no longer there so delete its entry in $KnownDatas
 		// this is where the list is cleaned
 		unset ($knownDatas[$filePath]);
+		$DisappearedFilesCounter++;
+	    }
 	}
 
 	$reapedDirectories = array(); // used to remove empty dirs after deleting files
@@ -544,7 +547,7 @@ function fileGrimReaper ($dirToScan)
 	 * ################################
 	 */
 
-	if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter
+	if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter || $DisappearedFilesCounter
 	    || $expiredDeletedCounter || $deadEndDeletedCounter)
 	{
 	    // Print the date if writing to a log file
@@ -558,9 +561,10 @@ function fileGrimReaper ($dirToScan)
 		// Add a new line for readability if we deleted files
 		cprint();
 
-	    if ($ModifiedFilesCounter)	cprint ($ModifiedFilesCounter,  " files were modified.");
-	    if ($NewFilesCounter)	cprint ($NewFilesCounter,	" files were new.");
-	    if ($deletedFilesCounter)	cprint ($deletedFilesCounter,   (REMOVE?" files were removed." :  " files have expired."));
+	    if ($ModifiedFilesCounter)	    cprint ($ModifiedFilesCounter,	" files were modified.");
+	    if ($NewFilesCounter)	    cprint ($NewFilesCounter,		" files were new.");
+	    if ($DisappearedFilesCounter)   cprint ($DisappearedFilesCounter,	" files disappeared.");
+	    if ($deletedFilesCounter)	    cprint ($deletedFilesCounter,	(REMOVE?" files were removed." :  " files have expired."));
 
 	    if (! SHOW) {
 		if ($reapedDeletedCounter)	cprint ($reapedDeletedCounter,  " now-empty directories were removed.");
