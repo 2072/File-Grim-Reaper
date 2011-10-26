@@ -246,15 +246,14 @@ function checkDataPath ()
 function getConfig ()
 {
     if (CONFIG)
-	$config = file(CONFIG, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    else {
+	$configPath = CONFIG;
+    else
 	$configPath = getcwd() . '/' . DEFAULT_CONFIG_FILE;
 
-	if (file_exists($configPath))
-	    $config = file($configPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-	else
-	    errorExit(1, 'No configuration file provided and no file named "', DEFAULT_CONFIG_FILE, '" found in ', getcwd());
-    }
+    if (file_exists($configPath))
+	$config = array_map('trim', file($configPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
+    else
+	errorExit(1, 'No configuration file provided and no file named "', DEFAULT_CONFIG_FILE, '" found in ', getcwd());
 
     if (count($config) == 0 )
 	errorExit(2, 'Configuration file is empty!', ' Configuration file used : ', ( isset($configPath) ? realpath($configPath) : CONFIG ));
