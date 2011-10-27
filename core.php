@@ -71,7 +71,7 @@ function cprint ()
 
 function printUsage ()
 {
-    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --remove | --show\n");
+    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --reap | --show\n");
 
     
 }
@@ -167,7 +167,7 @@ function GetAndSetOptions ()
     $longOptions = array (
 	"config::",
 	"show",
-	"remove",
+	"reap",
 	"logging",
     );
 
@@ -184,14 +184,14 @@ function GetAndSetOptions ()
     else
 	define ('LOGGING', false);
 
-    if (isset($setOptions['r']) || isset($setOptions['remove']))
-	define ('REMOVE', true);
+    if (isset($setOptions['r']) || isset($setOptions['reap']))
+	define ('REAP', true);
     else
-	define ('REMOVE', false);
+	define ('REAP', false);
 
-    if (SHOW && REMOVE)
-	errorExit(1, '--remove and --show options are exclusive!');
-    elseif (! (SHOW || REMOVE)) {
+    if (SHOW && REAP)
+	errorExit(1, '--reap and --show options are exclusive!');
+    elseif (! (SHOW || REAP)) {
 	printUsage ();
 	errorExit(1, "Action is missing!");
     }
@@ -384,7 +384,7 @@ function fileGrimReaper ($dirToScan)
 	$deletedFilesCounter = 0;
 	foreach ($filesToDelete as $file)
 	    if (removeFile($file)) {
-		if (REMOVE) unset($knownDatas[$file]);
+		if (REAP) unset($knownDatas[$file]);
 		$deletedFileList[] = $file;
 		$deletedFilesCounter++;
 		$reapedDirectories[dirname($file)] = true;
@@ -549,7 +549,7 @@ function fileGrimReaper ($dirToScan)
 	    if ($ModifiedFilesCounter)	    cprint ($ModifiedFilesCounter,	" files were modified.");
 	    if ($NewFilesCounter)	    cprint ($NewFilesCounter,		" files were new.");
 	    if ($DisappearedFilesCounter)   cprint ($DisappearedFilesCounter,	" files disappeared.");
-	    if ($deletedFilesCounter)	    cprint ($deletedFilesCounter,	(REMOVE?" files were removed." :  " files have expired."));
+	    if ($deletedFilesCounter)	    cprint ($deletedFilesCounter,	" files were removed.");
 
 	    if ($expiredDeletedCounter)	cprint ($expiredDeletedCounter, " expired-empty directories were removed.");
 
@@ -590,10 +590,4 @@ fileGrimReaper ( getConfig () );
 
 exit((int)($errorCount > 0));
 
-/*
- *
- *
- */
-
-// (c) John Wellesz for MikrosImage - September 2011
 ?>
