@@ -40,12 +40,8 @@ function removeFile ($path)
 {
     if (! DRYRUN && ! SHOW && ! @unlink($path))
 	error();
-    else {
-	//if (! SHOW)
-	//    cprint($path, " removed.");
-
+    else
 	return true;
-    }
 
     return false;
 }
@@ -173,7 +169,7 @@ function GetAndSetOptions ()
 	"show",
 	"remove",
 	"logging",
-	"dry-run"
+	"dryrun"
     );
 
     $setOptions = getopt("c::srdl", $longOptions);
@@ -194,7 +190,7 @@ function GetAndSetOptions ()
     else
 	define ('REMOVE', false);
 
-    if (isset($setOptions['d']) || isset($setOptions['dry-run'])) {
+    if (isset($setOptions['d']) || isset($setOptions['dryrun'])) {
 	define ('DRYRUN', true);
 	cprint ("== DRY-RUN MODE ==");
     } else
@@ -565,13 +561,18 @@ function fileGrimReaper ($dirToScan)
 	    if ($DisappearedFilesCounter)   cprint ($DisappearedFilesCounter,	" files disappeared.");
 	    if ($deletedFilesCounter)	    cprint ($deletedFilesCounter,	(REMOVE?" files were removed." :  " files have expired."));
 
-	    if (! SHOW) {
+	    if ($expiredDeletedCounter)	cprint ($expiredDeletedCounter, " expired-empty directories were removed.");
+
+	    if (! SHOW) { // Those values are not accurate in this mode
 		if ($reapedDeletedCounter)	cprint ($reapedDeletedCounter,  " now-empty directories were removed.");
-		if ($expiredDeletedCounter)	cprint ($expiredDeletedCounter, " expired-empty directories were removed.");
 		if ($deadEndDeletedCounter)	cprint ($deadEndDeletedCounter, " now-dead-end directories were removed.");
 	    }
 
 	    cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
+
+	    if (SHOW || DRYRUN)
+		cprint ('NOTE: Nothing was actually done');
+
 	    cprint ('---------------------------------');
 
 	} elseif (! LOGGING)
