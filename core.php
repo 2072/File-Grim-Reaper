@@ -38,7 +38,7 @@ $LOGFILEPATH;
 
 function removeFile ($path)
 {
-    if (! DRYRUN && ! SHOW && ! @unlink($path))
+    if (! SHOW && ! @unlink($path))
 	error();
     else
 	return true;
@@ -48,7 +48,7 @@ function removeFile ($path)
 
 function removeDirectory ($path)
 {
-    if (! DRYRUN && ! SHOW && ! @rmdir($path))
+    if (! SHOW && ! @rmdir($path))
 	error();
     else
 	return true;
@@ -169,10 +169,9 @@ function GetAndSetOptions ()
 	"show",
 	"remove",
 	"logging",
-	"dryrun"
     );
 
-    $setOptions = getopt("c::srdl", $longOptions);
+    $setOptions = getopt("c::srl", $longOptions);
 
 
     if (isset($setOptions['s']) || isset($setOptions['show']))
@@ -189,13 +188,6 @@ function GetAndSetOptions ()
 	define ('REMOVE', true);
     else
 	define ('REMOVE', false);
-
-    if (isset($setOptions['d']) || isset($setOptions['dryrun'])) {
-	define ('DRYRUN', true);
-	cprint ("== DRY-RUN MODE ==");
-    } else
-	define ('DRYRUN', false);
-
 
     if (SHOW && REMOVE)
 	errorExit(1, '--remove and --show options are exclusive!');
@@ -298,7 +290,7 @@ function saveDirectoryScannedDatas ($path, $datas)
 {
     global $LOGFILEPATH;
 
-    if (SHOW || DRYRUN) {
+    if (SHOW) {
 	cprint("Changes not saved, showing only.");
 	$LOGFILEPATH = false;
 	return;
@@ -326,8 +318,6 @@ function saveDirectoryScannedDatas ($path, $datas)
 	    error("Couldn't save scanned datas in: ", $dataFileName);
     }
     
-
-
     $LOGFILEPATH = false;
 }
 
@@ -570,8 +560,8 @@ function fileGrimReaper ($dirToScan)
 
 	    cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
 
-	    if (SHOW || DRYRUN)
-		cprint ('NOTE: Nothing was actually done');
+	    if (SHOW)
+		cprint ('NOTE: Nothing was actually done (--show is set)');
 
 	    cprint ('---------------------------------');
 
