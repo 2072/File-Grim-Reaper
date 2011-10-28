@@ -34,7 +34,6 @@ const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 define ( 'NOW', time() );
 
 
-$LOGFILEPATH;
 
 function removeFile ($path)
 {
@@ -64,9 +63,7 @@ function cprint ()
 
     fwrite(STDOUT, $toPrint);
 
-    global $LOGFILEPATH;
-    if (defined("LOGGING") && LOGGING && !empty($LOGFILEPATH))
-	error_log($toPrint, 3, $LOGFILEPATH);
+    addToLog($toPrint);
 }
 
 function printUsage ()
@@ -86,12 +83,12 @@ function printHeader ()
     );
 }
 
-$errorCount = 0;
+$ERRORCOUNT = 0;
 function error ()
 {
-    global $errorCount;
+    global $ERRORCOUNT;
 
-    $errorCount++;
+    $ERRORCOUNT++;
 
     $args = func_get_args();
 
@@ -107,13 +104,30 @@ function error ()
 	$args[] = $last_error['message'];
     }
 
-    $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n\r\n";
+    $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n";
     fwrite(STDERR, $toPrint);
 
-    global $LOGFILEPATH;
-    if (defined("LOGGING") && LOGGING && !empty($LOGFILEPATH))
-	error_log($toPrint, 3, $LOGFILEPATH);
+    addToLog($toPrint);
 }
+
+$LOGFILEPATH = "";
+$STARTHEADERPRINTED = false;
+function addToLog ($toWrite)
+{
+    global $LOGFILEPATH, $STARTHEADERPRINTED;
+
+    if (! (defined("LOGGING") && LOGGING && !empty($LOGFILEPATH)))
+	return;
+
+    if (! $STARTHEADERPRINTED) {
+	$header = "Started on: " . LOG_HEADER . "\r\n\r\n";
+	$STARTHEADERPRINTED = true;
+    } else
+	$header = "";
+
+    error_log("$header$toWrite", 3, $LOGFILEPATH);
+}
+
 
 function getDirectoryDepth($path)
 {
@@ -263,8 +277,9 @@ function getDirectoryScannedDatas ($path)
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
     if (LOGGING) {
-	global $LOGFILEPATH;
+	global $LOGFILEPATH, $STARTHEADERPRINTED;
 	$LOGFILEPATH = LOGS_PATH . "/".UNAME."_$dataFileName.log";
+	$STARTHEADERPRINTED = false;
     }
 
     if (! $dataFileName)
@@ -445,7 +460,7 @@ function fileGrimReaper ($dirToScan)
 	 * ################################
 	 */
 
-	// Protect teh base directory from deletion
+	// Protect the base directory from deletion
 	$DirHasChildren[$dirPath] = 'file';
 
 
@@ -494,7 +509,7 @@ function fileGrimReaper ($dirToScan)
 		// the directory is empty and is older than allowed duration
 	    } elseif (!$DirHasChildren[$path] && (@filemtime($path) + $dirParam['duration'] < NOW)) {
 
-		if (!removeDirectory($path)) {
+		if (! removeDirectory($path)) {
 		    $failedRemovalCounter++;
 		} else {
 		    //cprint('Removed emty (old) directory: ', $path);
@@ -510,7 +525,7 @@ function fileGrimReaper ($dirToScan)
 
 		}
 	    } elseif (isset($DirIsDeadEnd[$path])) {
-		if (!removeDirectory($path)) {
+		if (! removeDirectory($path)) {
 		    $failedRemovalCounter++;
 		} else {
 		    $deadEndDeletedCounter++;
@@ -533,11 +548,8 @@ function fileGrimReaper ($dirToScan)
 	 */
 
 	if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter || $DisappearedFilesCounter
-	    || $expiredDeletedCounter || $deadEndDeletedCounter)
+	    || $expiredDeletedCounter || $deadEndDeletedCounter || $failedRemovalCounter)
 	{
-	    // Print the date if writing to a log file
-	    if (LOGGING)
-		cprint("Started on: ", LOG_HEADER, "\n");
 
 	    foreach ($deletedFileList as $file)
 		cprint ('"', $file, '"', " removed.");
@@ -558,18 +570,19 @@ function fileGrimReaper ($dirToScan)
 		if ($deadEndDeletedCounter)	cprint ($deadEndDeletedCounter, " now-dead-end directories were removed.");
 	    }
 
-	    cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
+	    if ($failedRemovalCounter)
+		error ($failedRemovalCounter, " directories couldn't be removed.");
 
 	    if (SHOW)
-		cprint ('NOTE: Nothing was actually done (--show is set)');
+		cprint ('NOTE: Nothing was actually done (--show was set)');
+
+	    cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
 
 	    cprint ('---------------------------------');
 
 	} elseif (! LOGGING)
 	    cprint ("Nothing to do.");
 
-	if ($failedRemovalCounter)
-	    error ($failedRemovalCounter, " directory couldn't be removed.");
 
 	saveDirectoryScannedDatas($dirPath, $knownDatas);
 
@@ -588,6 +601,6 @@ fileGrimReaper ( getConfig () );
 
 
 
-exit((int)($errorCount > 0));
+exit((int)($ERRORCOUNT > 0));
 
 ?>
