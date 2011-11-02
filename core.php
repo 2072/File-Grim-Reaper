@@ -189,25 +189,6 @@ function isMTimeTheSame ($a, $b)
     return false;
 }
 
-function checkDaylightSavingBug($path) // doesn't work
-{
-    $tempFilePath = sprintf("$path/%X", crc32((string) microtime(true)));
-
-    $now = time();
-
-    if (@file_put_contents($tempFilePath, " ")) {
-	$fileMTime = filemtime($tempFilePath);
-	unlink($tempFilePath);
-
-	if (abs($fileMTime - $now) > 2)
-	    cprint("Daylight saving issue detected for path: $path, time diff: ", abs($fileMTime - $now));
-	else
-	    cprint ("Test time diff: ", abs($fileMTime - $now));
-
-    } else
-	error ("Couldn't create daylight saving test temp file");
-}
-
 function GetAndSetOptions ()
 {
     $longOptions = array (
