@@ -176,6 +176,38 @@ function isDirValid ($name)
     }
 }
 
+function isMTimeTheSame ($a, $b)
+{
+    if ($a == $b)
+	return true;
+
+    // if the difference is exactly 1 hour and the file is older than 1 day, 
+    // it's a fucking daylight saving issue (thank you Microsoft)
+    if ( (abs($a-$b) == 3600) && (NOW - $a > 86400) )
+	return true;
+
+    return false;
+}
+
+function checkDaylightSavingBug($path) // doesn't work
+{
+    $tempFilePath = sprintf("$path/%X", crc32((string) microtime(true)));
+
+    $now = time();
+
+    if (@file_put_contents($tempFilePath, " ")) {
+	$fileMTime = filemtime($tempFilePath);
+	unlink($tempFilePath);
+
+	if (abs($fileMTime - $now) > 2)
+	    cprint("Daylight saving issue detected for path: $path, time diff: ", abs($fileMTime - $now));
+	else
+	    cprint ("Test time diff: ", abs($fileMTime - $now));
+
+    } else
+	error ("Couldn't create daylight saving test temp file");
+}
+
 function GetAndSetOptions ()
 {
     $longOptions = array (
@@ -350,6 +382,7 @@ function fileGrimReaper ($dirToScan)
 	if (!LOGGING)
 	    cprint("\nNow considering files in: ", $dirPath, '...', "\n");
 
+
 	/* #########################
 	 * # Scan existing entries #
 	 * #########################
@@ -370,7 +403,7 @@ function fileGrimReaper ($dirToScan)
 
 		// If the file has NOT been modified since the last scan,
 		// check if it's elligeable for deletion
-		if ($fileMTime == $knownData["fileMTime"]) {
+		if (isMTimeTheSame($fileMTime, $knownData["fileMTime"])) {
 		    if ($knownData["foundOn"] + $dirParam['duration'] < NOW)
 			$filesToDelete[] = $filePath;
 		} else {
