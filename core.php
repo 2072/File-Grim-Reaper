@@ -183,7 +183,7 @@ function isMTimeTheSame ($a, $b)
 
     // if the difference is exactly 1 hour and the file is older than 1 day, 
     // it's a fucking daylight saving issue (thank you Microsoft)
-    if ( (abs($a-$b) == 3600) && (NOW - $a > 86400) )
+    if ( DAYLIGHTSAVINGBUG && (abs($a-$b) == 3600) && (NOW - $a > 86400) )
 	return true;
 
     return false;
@@ -196,9 +196,10 @@ function GetAndSetOptions ()
 	"show",
 	"reap",
 	"logging",
+	"daylightsavingbug",
     );
 
-    $setOptions = getopt("c::srl", $longOptions);
+    $setOptions = getopt("c::srly", $longOptions);
 
 
     if (isset($setOptions['s']) || isset($setOptions['show']))
@@ -215,6 +216,11 @@ function GetAndSetOptions ()
 	define ('REAP', true);
     else
 	define ('REAP', false);
+
+    if (isset($setOptions['y']) || isset($setOptions['daylightsavingbug']))
+	define ('DAYLIGHTSAVINGBUG', true);
+    else
+	define ('DAYLIGHTSAVINGBUG', false);
 
     if (SHOW && REAP)
 	errorExit(1, '--reap and --show options are exclusive!');
