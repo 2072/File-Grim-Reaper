@@ -27,7 +27,7 @@ if (! defined("PROPER_USAGE"))
 
 define ('UNAME', php_uname('n'));
 error_reporting ( E_ALL | E_STRICT );
-ini_set('error_log', dirname(realpath(__FILE__)) . "/".UNAME."_errors.txt");
+ini_set('error_log', dirname(realpath(__FILE__)) . "/".UNAME."_errors.log");
 
 const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
