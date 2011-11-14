@@ -485,8 +485,10 @@ function fileGrimReaper ($dirToScan)
 		    $NewFilesCounter++;
 		}
 	    }
-	} else
-	    errorExit(2, "Impossible to scan directory: ", $dirToScan);
+	} else {
+	    error("Impossible to scan directory for new files: ", $dirToScan, " aborting...");
+	    continue;
+	}
 
 	/* ################################
 	 * #  Removed orphaned directory  #
