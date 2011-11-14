@@ -66,6 +66,18 @@ function cprint ()
     addToLog($toPrint);
 }
 
+function unlogged_cprint()
+{
+    global $LOGFILEPATH;
+
+    $tmp = $LOGFILEPATH;
+    $LOGFILEPATH = "";
+
+    call_user_func_array('cprint', func_get_args());
+
+    $LOGFILEPATH = $tmp;
+}
+
 function printUsage ()
 {
     cprint ( "Usage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --reap | --show\n");
@@ -366,15 +378,14 @@ function fileGrimReaper ($dirToScan)
 
 
 	// The log file is named after the directory being checked so...
-	if (!LOGGING)
-	    cprint("\nNow considering files in: ", $dirPath, '...', "\n");
+	unlogged_cprint("Now considering files in: ", $dirPath, '...');
 
 
 	/* #########################
 	 * # Scan existing entries #
 	 * #########################
 	 */
-
+	unlogged_cprint("\tChecking existing entries...");
 	$filesToDelete = array();
 	$ModifiedFilesCounter	    = 0;
 	$DisappearedFilesCounter    = 0;
@@ -415,6 +426,7 @@ function fileGrimReaper ($dirToScan)
 	 * ##########################
 	 */
 
+	unlogged_cprint("\tReaping expired files...");
 	$deletedFileList = array();
 	$deletedFilesCounter = 0;
 	foreach ($filesToDelete as $file)
@@ -431,6 +443,7 @@ function fileGrimReaper ($dirToScan)
 	 * ################################
 	 */
 
+	unlogged_cprint("\tSacnning for new files...");
 	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath),
 	    RecursiveIteratorIterator::CHILD_FIRST);
 	$isDirEmpty = array();
@@ -479,6 +492,7 @@ function fileGrimReaper ($dirToScan)
 	 * #  Removed orphaned directory  #
 	 * ################################
 	 */
+	unlogged_cprint("\tRemoving orphaned directories...");
 
 	// Protect the base directory from deletion
 	$DirHasChildren[$dirPath] = 'file';
@@ -600,8 +614,8 @@ function fileGrimReaper ($dirToScan)
 
 	    cprint ('---------------------------------');
 
-	} elseif (! LOGGING)
-	    cprint ("Nothing to do.");
+	} else
+	    unlogged_cprint ("Nothing to do.");
 
 
 	saveDirectoryScannedDatas($dirPath, $knownDatas);
