@@ -453,20 +453,25 @@ function fileGrimReaper ($dirToScan)
 	if ( $iterator ) {
 	    foreach ($iterator as $file=>$fileinfo) {
 
+		// initialize the per directory child counter
 		if ($fileinfo->isDir() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
-		    // Mark the directory as empty the first time we see it
+		    // Mark the directory as empty the first time we see it, 
+		    // because if there are no file in it, it's the only time 
+		    // we'll see it.
 		    $DirHasChildren[$fileinfo->getPathname()] = 0;
 
 		}
 
-		// Count elements
+		// Count elements, increment the child number of the parent directory
 		if (! isset($DirHasChildren[$fileinfo->getPath()]))
 		    $DirHasChildren[$fileinfo->getPath()] = 1;
 		else
 		    $DirHasChildren[$fileinfo->getPath()]++;
 
+		//If it's not a file
 		if (! $fileinfo->isFile()) {
 
+		    // If neither file or directory, then we have a problem
 		    if (! $fileinfo->isDir())
 			error("'$file' is immortal... It needs renaming so it can be reaped when its time comes.");
 
@@ -474,7 +479,7 @@ function fileGrimReaper ($dirToScan)
 		}
 
 		// Mark the parent directory as not empty
-		$DirHasChildren[$fileinfo->getPath()] = 'file';
+		// $DirHasChildren[$fileinfo->getPath()] = 'file'; // XXX why ?
 
 		// if the file is new
 		if (! isset ($knownDatas[$fileinfo->getPathname()]) ) {
@@ -496,8 +501,11 @@ function fileGrimReaper ($dirToScan)
 	 */
 	unlogged_cprint("\tRemoving orphaned directories...");
 
-	// Protect the base directory from deletion
-	$DirHasChildren[$dirPath] = 'file';
+	// Protect the base directory from deletion (adding a virtual child)
+	if (!isset($DirHasChildren[$dirPath]))
+	    $DirHasChildren[$dirPath] = 1;
+	else
+	    $DirHasChildren[$dirPath]++;
 
 
 	// sort the array using the path depth, the deepest first
@@ -533,7 +541,8 @@ function fileGrimReaper ($dirToScan)
 		    $reapedDeletedCounter++;
 
 		    // decrease parent children number, this will be enough to trigger a deletion (since we go from
-		    // the child to the parent) but not a deletion of a parent directory containing only directories.
+		    // the child to the parent) but not a deletion of a parent directory containing only directories 
+		    // where no files were reaped.
 		    if (--$DirHasChildren[dirname($path)] < 0)
 			error("Impossible Error #3: too many elements: ", $DirHasChildren[dirname($path)]);
 
