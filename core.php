@@ -132,7 +132,7 @@ function addToLog ($toWrite)
 	return;
 
     if (! $STARTHEADERPRINTED) {
-	$header = "Started on: " . LOG_HEADER . "\r\n\r\n";
+	$header = "---------------------------------\r\n" . "Started on: " . LOG_HEADER . "\r\n\r\n";
 	$STARTHEADERPRINTED = true;
     } else
 	$header = "";
@@ -632,8 +632,6 @@ function fileGrimReaper ($dirToScan)
 		cprint ('NOTE: Nothing was actually done (--show was set)');
 
 	    cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
-
-	    cprint ('---------------------------------');
 
 	} else
 	    unlogged_cprint ("Nothing to do. $FoundFilesCounter files were found.");
