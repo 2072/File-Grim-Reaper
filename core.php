@@ -1,8 +1,10 @@
 <?php
 
-/* File Grim Reaper - It will reap your files!
+/* File Grim Reaper v1.0 - It will reap your files!
  * (c) 2011 John Wellesz
  *   
+ * Send bug reports to: <john.wellesz+FGR@teaser.fr>
+ *
  *   This file is part of File Grim Reaper.
  *
  *   File Grim Reaper is free software: you can redistribute it and/or modify
