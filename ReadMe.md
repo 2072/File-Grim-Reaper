@@ -151,3 +151,12 @@ Then make a file containing:
 (this will run the script each hour)
 
 Finally load it using the command "crontab YOURFILE"
+
+## Links
+
+### Project
+ https://github.com/2072/File-Grim-Reaper
+
+### Issues and bug reports
+ https://github.com/2072/File-Grim-Reaper/issues
+

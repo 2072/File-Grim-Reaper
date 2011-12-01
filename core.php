@@ -3,7 +3,8 @@
 /* File Grim Reaper v1.0 - It will reap your files!
  * (c) 2011 John Wellesz
  *   
- * Send bug reports to: <john.wellesz+FGR@teaser.fr>
+ * Project: https://github.com/2072/File-Grim-Reaper
+ * For bug reports: https://github.com/2072/File-Grim-Reaper/issues
  *
  *   This file is part of File Grim Reaper.
  *
