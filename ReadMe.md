@@ -10,7 +10,7 @@ File Grim Reaper is meant to be run as a cron job. Each time the program is run
 it scans the configured directories and takes a snapshot of their content
 comparing the result with the previous snapshot.
 
-Files get deleted when they've been in the snapshot without being modified for
+Files get deleted when they have been in the snapshot without being modified for
 longer than the folder expiry. This insures that if an old file is moved to one
 of the monitored directory, its unchanged modification time will not trigger its
 untimely deletion upon the next run.
@@ -72,10 +72,10 @@ will be created in FileGrimReaper.php's directory.
 
 ## Options
 
-    -r, --reap	    Removes expired files and directories and update snapshots.
+    -r, --reap	    Removes expired files and directories and updates snapshots.
 
-    -s, --show	    Shows what would happen (doesn't actually remove anything and
-		    doesn't update snapshots).
+    -s, --show	    Shows what would happen with the --reap command (doesn't
+		    actually remove anything and doesn't update snapshots).
 
     -c, --config    Uses the specified configuration file.
 
@@ -95,7 +95,7 @@ will be created in FileGrimReaper.php's directory.
 		    This option enables the detection of this bug to prevent files
 		    from appearing modified (and thus resetting their expiry) when DLS status
 		    changes.
-		    There is one caveat though: If a file is replaced with a file
+		    There is one caveat though: if a file is replaced with a file
 		    whose modification time is exactly one hour apart from the
 		    original file (and older than a day), the file expiry won't be
 		    reset and the file will be deleted sooner than expected.
@@ -103,13 +103,16 @@ will be created in FileGrimReaper.php's directory.
 ## Usage
 
 File Grim Reaper is meant to be run as a cron job.
+
 If you plan using it on several computers it's best to have FileGrimReaper
 located on a unique place such as on a network volume so you can update it
-easily and have all your log ans snapshot files in one place.
+easily and have all your log and snapshot files in one place.
+
+PHP 5.3.8 or superior is required.
 
 ### Implementation example for Windows platforms
 
-In this example we're on Windows XP. FileGrimReaper is located on a remote
+In this example we are on Windows XP. FileGrimReaper is located on a remote
 volume and the last error is logged to a file on this remote volume (if files
 or directories can't be deleted you'll find their full path in this file).
 
@@ -121,14 +124,14 @@ Then create a shortcut and edit its properties to make it start in a minimized
 window.
 
 You also need to create a configuration file "FileGrimReaper-paths.txt" (see
-above for an example)
+above for an example).
 
 Finally use Windows' task manager to create a task that will run the shortcut
 every hour (depending on the expiry of your configured folders).
 
 ### Implementation example for Unix platforms
 
-In this example we're on Mac OSX. FileGrimReaper is located on a remote
+In this example we are on Mac OSX. FileGrimReaper is located on a remote
 volume and the last error is logged to a file on this remote volume (if files
 or directories can't be deleted you'll find their full path in this file).
 
@@ -150,7 +153,7 @@ Then make a file containing:
 
 (this will run the script each hour)
 
-Finally load it using the command "crontab YOURFILE"
+Finally load it using the command "crontab YOURFILE".
 
 ## Links
 
