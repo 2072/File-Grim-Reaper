@@ -2,11 +2,14 @@
 
 /* File Grim Reaper v1.0 - It will reap your files!
  * (c) 2011 John Wellesz
+ *   
+ *  This file is part of File Grim Reaper.
  *
- * Project: https://github.com/2072/File-Grim-Reaper
- * For bug reports: https://github.com/2072/File-Grim-Reaper/issues
+ *  Project home:
+ *	https://github.com/2072/File-Grim-Reaper
  *
- *   This file is part of File Grim Reaper.
+ *  Bug reports/Suggestions:
+ *	https://github.com/2072/File-Grim-Reaper/issues
  *
  *   File Grim Reaper is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -15,7 +18,7 @@
  *
  *   File Grim Reaper is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU General Public License for more details.
  *
  *   You should have received a copy of the GNU General Public License

@@ -157,9 +157,9 @@ Finally load it using the command "crontab YOURFILE".
 
 ## Links
 
-### Project
+### Project home
  https://github.com/2072/File-Grim-Reaper
 
-### Issues and bug reports
+### Issues, bug reports and suggestions
  https://github.com/2072/File-Grim-Reaper/issues
 

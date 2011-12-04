@@ -3,10 +3,13 @@
 /* File Grim Reaper v1.0 - It will reap your files!
  * (c) 2011 John Wellesz
  *   
- * Project: https://github.com/2072/File-Grim-Reaper
- * For bug reports: https://github.com/2072/File-Grim-Reaper/issues
+ *  This file is part of File Grim Reaper.
  *
- *   This file is part of File Grim Reaper.
+ *  Project home:
+ *	https://github.com/2072/File-Grim-Reaper
+ *
+ *  Bug reports/Suggestions:
+ *	https://github.com/2072/File-Grim-Reaper/issues
  *
  *   File Grim Reaper is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -15,7 +18,7 @@
  *
  *   File Grim Reaper is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU General Public License for more details.
  *
  *   You should have received a copy of the GNU General Public License
@@ -83,18 +86,80 @@ function unlogged_cprint()
 
 function printUsage ()
 {
-    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " [--config configFilePath] --reap | --show\n");
-
-    
+    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " --reap | --show [--config configFilePath] [--logging]\n");
 }
 
 function printHeader ()
 {
-    cprint (
-	"\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011 John Wellesz\n\n",
-	"\tThis program comes with ABSOLUTELY NO WARRANTY.\n",
-	"\tThis is free software, and you are welcome to redistribute it\n",
-	"\tunder certain conditions; see the provided GPL.txt for details.\n"
+    global $argc;
+
+    if ($argc > 1)
+
+	cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011 John Wellesz\n",
+	<<<SHORTWELCOME
+
+    This program comes with ABSOLUTELY NO WARRANTY.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; see the provided GPL.txt for details.
+
+SHORTWELCOME
+	);
+
+    else
+	cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011 John Wellesz\n",
+
+	    <<<LONGWELCOME
+
+Project home:
+	https://github.com/2072/File-Grim-Reaper
+
+Bug reports/Suggestions:
+	https://github.com/2072/File-Grim-Reaper/issues
+
+    File Grim Reaper is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    File Grim Reaper is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with File Grim Reaper. If not, see <http://www.gnu.org/licenses/>.
+
+## Options
+
+    -r, --reap	    Removes expired files and directories and updates snapshots.
+
+    -s, --show	    Shows what would happen with the --reap command (doesn't
+		    actually remove anything and doesn't update snapshots).
+
+    -c, --config    Uses the specified configuration file.
+
+    -l, --logging   Creates log files for each configured directories. The log files
+		    will be stored in a 'Logs' sub-folder in the 'FileGrimReaper-Datas' directory.
+		    The log file will be named in the following way:
+		    COMPUTERNAME_SANITIZED-PATH.log
+		    The log file will be written if and only if something changed
+		    in the monitored folder. The number of new and modified files is given as well
+		    as the full path of every deleted file.
+
+    -y, --daylightsavingbug
+		    On Microsoft Windows platforms, on some filesystems (such as
+		    FAT or network shares), there is a "feature" that makes filemtime() report a
+		    different file modification time wether Daylight Saving is active or not.
+
+		    This option enables the detection of this bug to prevent files
+		    from appearing modified (and thus resetting their expiry) when DLS status
+		    changes.
+		    There is one caveat though: if a file is replaced with a file
+		    whose modification time is exactly one hour apart from the
+		    original file (and older than a day), the file expiry won't be
+		    reset and the file will be deleted sooner than expected.
+
+LONGWELCOME
     );
 }
 
@@ -240,8 +305,14 @@ function GetAndSetOptions ()
     if (SHOW && REAP)
 	errorExit(1, '--reap and --show options are exclusive!');
     elseif (! (SHOW || REAP)) {
-	printUsage ();
-	errorExit(1, "Action is missing!");
+
+	global $argc;
+
+	if ($argc > 1) {
+	    printUsage ();
+	    errorExit(1, "Action is missing!");
+	} else
+	    exit(0);
     }
 
     if (! empty($setOptions['c']) || ! empty($setOptions['config'])) {
