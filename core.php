@@ -43,9 +43,12 @@ define ( 'NOW', time() );
 
 function removeFile ($path)
 {
-    if (! SHOW && ! @unlink($path))
-	error();
-    else
+    if (! SHOW && ! @unlink($path)) {
+	if (! (@chmod( $path, 0777 ) && @unlink($path)))
+	    error();
+	else
+	    return true;
+    } else
 	return true;
 
     return false;
