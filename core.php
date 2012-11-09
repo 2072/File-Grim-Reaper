@@ -1,7 +1,7 @@
 <?php
 
 /* File Grim Reaper v1.0 - It will reap your files!
- * (c) 2011 John Wellesz
+ * (c) 2011-2012 John Wellesz
  *   
  *  This file is part of File Grim Reaper.
  *
@@ -25,8 +25,8 @@
  *   along with File Grim Reaper. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const VERSION = 1;
-const REVISION = 0;
+const VERSION = "1";
+const REVISION = "0.2";
 
 if (! defined("PROPER_USAGE"))
     die("Incorrect usage, you cannot execute this file directly!");
@@ -70,9 +70,9 @@ function cprint ()
 
     $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n";
 
-    fwrite(STDOUT, $toPrint);
-
     addToLog($toPrint);
+
+    return fwrite(STDOUT, $toPrint);
 }
 
 function unlogged_cprint()
@@ -82,9 +82,23 @@ function unlogged_cprint()
     $tmp = $LOGFILEPATH;
     $LOGFILEPATH = "";
 
-    call_user_func_array('cprint', func_get_args());
+    $written = call_user_func_array('cprint', func_get_args());
 
     $LOGFILEPATH = $tmp;
+
+    return $written;
+}
+
+function temp_cprint()
+{
+    //write something and place the cursor back where it was
+    $args = func_get_args();
+
+    $toPrint = str_replace("\n", "\r\n", implode($args, ""));
+
+    $written = fwrite(STDOUT, $toPrint);
+
+    return fwrite(STDOUT, str_pad("", $written, chr(0x8)));
 }
 
 function printUsage ()
@@ -98,7 +112,7 @@ function printHeader ()
 
     if ($argc > 1)
 
-	cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011 John Wellesz\n",
+	cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2012 John Wellesz\n",
 	<<<SHORTWELCOME
 
     This program comes with ABSOLUTELY NO WARRANTY.
@@ -109,7 +123,7 @@ SHORTWELCOME
 	);
 
     else
-	cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011 John Wellesz\n",
+	cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2012 John Wellesz\n",
 
 	    <<<LONGWELCOME
 
@@ -503,6 +517,9 @@ function fileGrimReaper ($dirToScan)
 		    "fileMTime" => $fileinfo->getMTime(),
 		);
 		$FoundFilesCounter++;
+
+		if (! ($FoundFilesCounter % 10) )
+		    temp_cprint($FoundFilesCounter, " files found...");
 	    }
 	} else {
 	    error("Impossible to take snapshot for directory '", $dirToScan, "'...");
