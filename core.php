@@ -27,6 +27,7 @@
 
 const VERSION = "1";
 const REVISION = "0.2";
+const RESPITE  = 12; // hours
 
 if (! defined("PROPER_USAGE"))
     die("Incorrect usage, you cannot execute this file directly!");
@@ -394,7 +395,7 @@ function getConfig ()
     return $directories;
 }
 
-function getDirectoryScannedDatas ($path)
+function getDirectoryScannedDatas ($path, &$lastScanned=false)
 {
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
@@ -410,6 +411,8 @@ function getDirectoryScannedDatas ($path)
     $dataFileName = DATA_PATH . '/'. UNAME . '_' . $dataFileName . '.data.serialized';
 
     if (file_exists($dataFileName)) {
+
+	$lastScanned = filemtime($dataFileName);
 
 	$data = unserialize (file_get_contents($dataFileName));
 
@@ -460,17 +463,27 @@ function saveDirectoryScannedDatas ($path, $datas)
 
 function fileGrimReaper ($dirToScan)
 {
+
+    // sort directories so the shortest durations are scanned first
+    // TODO
+
     foreach ($dirToScan as $dirPath=>$dirParam) {
 
-	$start = microtime(true);
+	$start		= microtime(true);
+	$lastScanned	= 0;
 	// get previous scan datas
-	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath)))
+	if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned)))
 	    continue;
 
 
 	// The log file is named after the directory being checked so...
 	unlogged_cprint("Now considering files in: ", $dirPath, '...');
 
+
+	if ( (NOW - $lastScanned) < RESPITE * 60 * 60 && $dirParam['duration'] > 2 * RESPITE * 60 * 60) {
+	    unlogged_cprint("Skipping (snapshot is just ", sprintf("%0.1f", (NOW - $lastScanned) / 3600)," hours and life is ", sprintf("%0.1f", $dirParam['duration'] / 86400), " days)");
+	    continue;
+	}
 
 	/* ########################################
 	 * # Take a new snapshot of the directory #
