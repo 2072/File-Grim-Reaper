@@ -465,7 +465,7 @@ function fileGrimReaper ($dirToScan)
 {
 
     // sort directories so the shortest durations are scanned first
-    // TODO
+    uasort($dirToScan, function($a, $b) {$a = $a['duration']; $b=$b['duration']; return ($a < $b) * -1 + ($a > $b) * 1; });
 
     foreach ($dirToScan as $dirPath=>$dirParam) {
 
