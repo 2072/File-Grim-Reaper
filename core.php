@@ -532,7 +532,7 @@ function fileGrimReaper ($dirToScan)
 		$FoundFilesCounter++;
 
 		if (! ($FoundFilesCounter % 10) )
-		    temp_cprint($FoundFilesCounter, " files found...");
+		    temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), "/')");
 	    }
 	} else {
 	    error("Impossible to take snapshot for directory '", $dirToScan, "'...");
