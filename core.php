@@ -491,7 +491,7 @@ function fileGrimReaper ($dirToScan)
 	 */
 
 	unlogged_cprint("\tTaking a new snapshot...");
-	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath),
+	$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath, FilesystemIterator::SKIP_DOTS),
 	    RecursiveIteratorIterator::CHILD_FIRST);
 
 	$NewSnapShot	    = array();
