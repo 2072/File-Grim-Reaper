@@ -29,6 +29,8 @@ const VERSION = "1";
 const REVISION = "0.2";
 const RESPITE  = 12; // hours
 
+clearstatcache();
+
 if (! defined("PROPER_USAGE"))
     die("Incorrect usage, you cannot execute this file directly!");
 
@@ -410,7 +412,7 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false)
 
     $dataFileName = DATA_PATH . '/'. UNAME . '_' . $dataFileName . '.data.serialized';
 
-    if (file_exists($dataFileName)) {
+    if (file_exists($dataFileName) && @filemtime($dataFileName)) { // sometimes file_exists() returns true whereas the file doesn't exist... Clearstatcache is not enough apparently (observed on OSX 10.5 on 2012-12-17 with php 5.3.8)
 
 	$lastScanned = filemtime($dataFileName);
 
@@ -531,7 +533,7 @@ function fileGrimReaper ($dirToScan)
 		);
 		$FoundFilesCounter++;
 
-		if (! ($FoundFilesCounter % 10) )
+		if (! ($FoundFilesCounter % 100) )
 		    temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), "/')");
 	    }
 	} else {
