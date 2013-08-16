@@ -26,7 +26,7 @@
  */
 
 const VERSION = "1";
-const REVISION = "0.2";
+const REVISION = "0.3";
 const RESPITE  = 12; // hours
 
 clearstatcache();
@@ -48,7 +48,7 @@ function removeFile ($path)
 {
     if (! SHOW && ! @unlink($path)) {
 	if (! (@chmod( $path, 0777 ) && @unlink($path)))
-	    error();
+	    error("Couldn't remove '$path'");
 	else
 	    return true;
     } else
@@ -504,7 +504,7 @@ function fileGrimReaper ($dirToScan)
 	    foreach ($iterator as $file=>$fileinfo) {
 
 		// initialize the per directory child counter
-		if ($fileinfo->isDir() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
+		if ($fileinfo->isDir() && ! $fileinfo->isLink() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
 		    // Mark the directory as empty the first time we see it, 
 		    // because if there are no file in it, it's the only time 
 		    // we'll see it.
@@ -518,7 +518,7 @@ function fileGrimReaper ($dirToScan)
 		    $DirHasChildren[$fileinfo->getPath()]++;
 
 		//If it's not a file
-		if (! $fileinfo->isFile()) {
+		if (! $fileinfo->isFile() && ! $fileinfo->isLink()) {
 
 		    // If neither file or directory, then we have a problem
 		    if (! $fileinfo->isDir())
