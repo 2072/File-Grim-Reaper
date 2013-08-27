@@ -212,6 +212,43 @@ function error ()
 
 $LOGFILEPATH = "";
 $STARTHEADERPRINTED = false;
+
+
+function IsStringInc($str_1, $str_2) {
+
+    if (strlen($str_1) != strlen($str_2) || $str_1 == $str_2)
+	return false;
+
+    $diffs = array(); $d = 0; $diffOffset = 0;
+    for ($i=0; $i < strlen($str_1); ++$i) {
+
+	if ($str_1{$i} != $str_2{$i}) {
+
+	    $diffOffset = $i - $d;
+
+	    if (!isset ($diffs[$diffOffset]))
+		$diffs[$diffOffset] = array (array(),array());
+
+	    $diffs[$diffOffset][0][]  =  $str_1{$i};
+	    $diffs[$diffOffset][1][]  =  $str_2{$i};
+
+	    ++$d;
+	}
+    }
+
+    if (count($diffs) > 1)
+	return false;
+
+    $diffs[$diffOffset][0] = (int)implode($diffs[$diffOffset][0]);
+    $diffs[$diffOffset][1] = (int)implode($diffs[$diffOffset][1]);
+
+    if ($diffs[$diffOffset][0] + 1 == $diffs[$diffOffset][1])
+	return true;
+    else
+	return false;
+}
+
+
 function addToLog ($toWrite)
 {
     global $LOGFILEPATH, $STARTHEADERPRINTED;
@@ -713,8 +750,42 @@ function fileGrimReaper ($dirToScan)
 	    || $expiredDeletedCounter || $deadEndDeletedCounter || $failedRemovalCounter)
 	{
 
-	    foreach ($deletedFileList as $file)
-		cprint ('"', $file, '"', " removed.");
+	    $sequenceStart = false; $skippedCount = 0;
+	    $cprintFile = function ($file) { cprint ('"', $file, '"', " removed!"); };
+	    $isLast = function ($i) use (&$deletedFileList) { return ($i == (count($deletedFileList) - 1)); } ;
+
+	    foreach ($deletedFileList as $i=>$file) {
+
+		// Are we inside a sequentially-numbered file list?
+		$inSequence = $i > 0
+		    && ! $isLast ($i)
+		    && IsStringInc($deletedFileList[$i - 1], $deletedFileList[$i]);
+
+		// We are not and were not inside a file sequence
+		if (! $inSequence && ! $skippedCount) {
+		    // let's echo the file name then...
+		    $cprintFile ($file);
+		} else
+		    ++$skippedCount;
+
+		if (! $inSequence && $skippedCount) {
+
+		    // display the number of file we skipped echoing
+		    if ($skippedCount > 1 )
+			cprint ("[...] ", '(', $skippedCount - 1 - !$isLast ($i), ' files)');
+
+		    // if we haven't reached the end of the list
+		    if ( ! $isLast ($i) )
+			// we echo the last file of the sequence
+			$cprintFile ($deletedFileList[$i - 1]);
+
+		    // echo the file we're on since it wasn't displayed
+		    $cprintFile ($file);
+
+		    $skippedCount = 0;
+		}
+
+	    }
 
 	    if ($deletedFilesCounter)
 		// Add a new line for readability if we deleted files
