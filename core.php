@@ -151,33 +151,36 @@ Bug reports/Suggestions:
 
 ## Options
 
-    -r, --reap      Removes expired files and directories and updates snapshots.
+    -r, --reap      Removes expired files, directories and updates snapshots.
 
     -s, --show      Shows what would happen with the --reap command (doesn't
                     actually remove anything and doesn't update snapshots).
 
     -c, --config    Uses the specified configuration file.
 
-    -l, --logging   Creates log files for each configured directories. The log files
-                    will be stored in a 'Logs' sub-folder in the 'FileGrimReaper-Datas' directory.
-                    The log file will be named in the following way:
-                    COMPUTERNAME_SANITIZED-PATH.log
-                    The log file will be written if and only if something changed
-                    in the monitored folder. The number of new and modified files is given as well
-                    as the full path of every deleted file.
+    -l, --logging   Creates log files for each configured directories. The log 
+                    files will be stored in a 'Logs' sub-folder in the
+                    'FileGrimReaper-Datas' directory. The log file will be 
+                    named in the following way: COMPUTERNAME_SANITIZED-PATH.log
+                    The log file will be written if and only if something 
+                    changed in the monitored folder. The number of new and 
+                    modified files is given as well as the full path of every 
+                    deleted file.
 
     -y, --daylightsavingbug
-                    On Microsoft Windows platforms, on some filesystems (such as
-                    FAT or network shares), there is a "feature" that makes filemtime() report a
-                    different file modification time wether Daylight Saving is active or not.
+                    On Microsoft Windows platforms, on some filesystems (such
+                    as FAT or network shares), there is a "feature" that makes 
+                    filemtime() report a different file modification time 
+                    wether Daylight Saving is active or not.
 
-                    This option enables the detection of this bug to prevent files
-                    from appearing modified (and thus resetting their expiry) when DLS status
-                    changes.
-                    There is one caveat though: if a file is replaced with a file
-                    whose modification time is exactly one hour apart from the
-                    original file (and older than a day), the file expiry won't be
-                    reset and the file will be deleted sooner than expected.
+                    This option enables the detection of this bug to prevent 
+                    files from appearing modified (and thus resetting their 
+                    expiry) when DLS status changes.
+                    There is one caveat though: if a file is replaced with a 
+                    file whose modification time is exactly one hour apart from
+                    the original file (and older than a day), the file expiry
+                    won't be reset and the file will be deleted sooner than
+                    expected.
 
 LONGWELCOME
     );
