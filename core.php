@@ -635,17 +635,19 @@ function fileGrimReaper ($dirToScan)
         $deletedFilesCounter    = 0;
         $reapedDirectories      = array(); // used to remove empty dirs after deleting files
 
-        foreach ($filesToDelete as $file)
+	for ($i=0 ; $i < count($filesToDelete) ; $i++) {
+	    $file = $filesToDelete[$i];
 
-            if (removeFile($file)) {
-                unset($knownDatas[$file]);
+	    if (removeFile($file)) {
+		unset($knownDatas[$file]);
 
-                $deletedFileList[] = $file;
-                $deletedFilesCounter++;
+		$deletedFileList[] = $file;
+		$deletedFilesCounter++;
 
-                $reapedDirectories[dirname($file)] = true;
-                $DirHasChildren[dirname($file)]--;
-            }
+		$reapedDirectories[dirname($file)] = true;
+		$DirHasChildren[dirname($file)]--;
+	    }
+	}
 
 
         /* ################################
@@ -754,7 +756,9 @@ function fileGrimReaper ($dirToScan)
             $cprintFile = function ($file) { cprint ('"', $file, '"', " removed!"); };
             $isLast = function ($i) use (&$deletedFileList) { return ($i == (count($deletedFileList) - 1)); } ;
 
-            foreach ($deletedFileList as $i=>$file) {
+	    for ($i=0 ; $i < count($deletedFileList) ; $i++) {
+
+		$file = $deletedFileList[$i];
 
                 // Are we inside a sequentially-numbered file list?
                 $inSequence = $i > 0
