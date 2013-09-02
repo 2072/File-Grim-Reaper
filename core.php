@@ -635,6 +635,8 @@ function fileGrimReaper ($dirToScan)
         $deletedFilesCounter    = 0;
         $reapedDirectories      = array(); // used to remove empty dirs after deleting files
 
+	// delete the files in order so the delete logs are readable
+	sort($filesToDelete);
 	for ($i=0 ; $i < count($filesToDelete) ; $i++) {
 	    $file = $filesToDelete[$i];
 
