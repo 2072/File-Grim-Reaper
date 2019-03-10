@@ -1,7 +1,7 @@
 <?php
 
-/* File Grim Reaper v1.0 - It will reap your files!
- * (c) 2011-2013 John Wellesz
+/* File Grim Reaper v1.1 - It will reap your files!
+ * (c) 2011-2019 John Wellesz
  *
  *  This file is part of File Grim Reaper.
  *
@@ -26,8 +26,10 @@
  */
 
 const VERSION = "1";
-const REVISION = "0.4";
+const REVISION = "1.0";
 const RESPITE  = 12; // hours
+const FOUND_ON = 0;
+const FILE_M_TIME = 1;
 
 clearstatcache();
 
@@ -458,14 +460,26 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false)
 
         $data = unserialize (file_get_contents($dataFileName));
 
-        if (is_array($data))
+        if (is_array($data)) {
+            // convert old format
+            $firstElement = current($data);
+            if ($firstElement !== FALSE && isset($firstElement["foundOn"]) ) {
+                $cData = [];
+                foreach($data as $fullFilePath=>$times) {
+                    $cData[dirname($fullFilePath)][basename($fullFilePath)] = [
+                        FOUND_ON => $times["foundOn"],
+                        FILE_M_TIME => $times["fileMTime"]
+                    ];
+                }
+                $data = $cData;
+            }
             return $data;
-        else {
+        } else {
             error('Error loading data for directory: ', $path);
             return false;
         }
     } else
-        return array ();
+        return [];
 }
 
 function saveDirectoryScannedDatas ($path, $datas)
@@ -536,8 +550,8 @@ function fileGrimReaper ($dirToScan)
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
 
-        $NewSnapShot        = array();
-        $DirHasChildren     = array();
+        $NewSnapShot        = [];
+        $DirHasChildren     = [];
         $FoundFilesCounter  = 0;
 
         if ( $iterator ) {
@@ -567,14 +581,14 @@ function fileGrimReaper ($dirToScan)
                     continue;
                 }
 
-                $NewSnapShot[$fileinfo->getPathname()] = array (
-                    "foundOn" => time(),
-                    "fileMTime" => $fileinfo->getMTime(),
-                );
+                $NewSnapShot[$fileinfo->getPath()][basename($fileinfo->getPathname())] = [
+                    FOUND_ON => time(),
+                    FILE_M_TIME => $fileinfo->getMTime(),
+                ];
                 $FoundFilesCounter++;
 
                 if (! ($FoundFilesCounter % 100) )
-                    temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), "/')");
+                    temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), DIRECTORY_SEPARATOR,"')");
             }
         } else {
             error("Impossible to take snapshot for directory '", $dirToScan, "'...");
@@ -588,33 +602,37 @@ function fileGrimReaper ($dirToScan)
 
         unlogged_cprint("\tComparing with saved snapshot...");
 
-        $filesToDelete              = array();
         $ModifiedFilesCounter       = 0;
         $DisappearedFilesCounter    = 0;
+        $filesToDelete              = [];
 
-        foreach ($knownDatas as $filePath=>$knownData) {
-            // if the file is still there
-            if (isset($NewSnapShot[$filePath])) {
+        foreach ($knownDatas as $dirName=>$dirItems)
+            foreach ($dirItems as $fileName=>$times) {
+                // if the file is still there
+                if (isset($NewSnapShot[$dirName][$fileName])) {
 
-                // If the file has NOT been modified since the last scan,
-                // check if it's elligeable for deletion
-                if (isMTimeTheSame( $NewSnapShot[$filePath]["fileMTime"], $knownData["fileMTime"])) {
-                    if ($knownData["foundOn"] + $dirParam['duration'] < NOW)
-                        $filesToDelete[] = $filePath;
+                    // If the file has NOT been modified since the last scan,
+                    // check if it's elligeable for deletion
+                    if (isMTimeTheSame( $NewSnapShot[$dirName][$fileName][FILE_M_TIME], $times[FILE_M_TIME])) {
+                        if ($times[FOUND_ON] + $dirParam['duration'] < NOW)
+                            $filesToDelete[$dirName][] = $fileName;
+                    } else {
+                        // treat as a new file
+                        $knownDatas[$dirName][$fileName][FOUND_ON] = NOW;
+                        $knownDatas[$dirName][$fileName][FILE_M_TIME] = $NewSnapShot[$dirName][$fileName][FILE_M_TIME];
+                        $ModifiedFilesCounter++;
+                    }
+
                 } else {
-                    // treat as a new file
-                    $knownDatas[$filePath]["foundOn"] = NOW;
-                    $knownDatas[$filePath]["fileMTime"] = $NewSnapShot[$filePath]["fileMTime"];
-                    $ModifiedFilesCounter++;
-                }
+                    // the file is no longer there so delete its entry in $KnownDatas
+                    // this is where the list is cleaned
+                    unset ($knownDatas[$dirName][$fileName]);
+                    $DisappearedFilesCounter++;
 
-            } else {
-                // the file is no longer there so delete its entry in $KnownDatas
-                // this is where the list is cleaned
-                unset ($knownDatas[$filePath]);
-                $DisappearedFilesCounter++;
+                    if (!count($knownDatas[$dirName]))
+                        unset($knownDatas[$dirName]);
+                }
             }
-        }
 
         /* ################################
          * # Add new items to $knownDatas #
@@ -622,11 +640,14 @@ function fileGrimReaper ($dirToScan)
          */
 
         $NewFilesCounter        = 0;
-        foreach ($NewSnapShot as $filePath=>$times)
-            if (! isset ($knownDatas[$filePath])) {
-                $knownDatas[$filePath] = $times;
-                $NewFilesCounter++;
-            }
+        foreach ($NewSnapShot as $dirName=>$dirItems)
+            foreach ($dirItems as $fileName=>$times)
+                if (! isset ($knownDatas[$dirName][$fileName])) {
+                    $knownDatas[$dirName][$fileName] = $times;
+                    $NewFilesCounter++;
+                }
+
+        unset($NewSnapShot);
 
         /* ##########################
          * # Reap the expired files #
@@ -634,23 +655,32 @@ function fileGrimReaper ($dirToScan)
          */
 
         unlogged_cprint("\tReaping expired files...");
-        $deletedFileList        = array();
+        $deletedFileList        = [];
         $deletedFilesCounter    = 0;
-        $reapedDirectories      = array(); // used to remove empty dirs after deleting files
+        $reapedDirectories      = []; // used to remove empty dirs after deleting files
 
-        // delete the files in order so the delete logs are readable
-        sort($filesToDelete);
-        for ($i=0 ; $i < count($filesToDelete) ; $i++) {
-            $file = $filesToDelete[$i];
+        // Delete the files in a sorted order so the delete log is readable
+        // Dir sort:
+        array_multisort($filesToDelete);
 
-            if (removeFile($file)) {
-                unset($knownDatas[$file]);
+        foreach($filesToDelete as $dirName => $fileNames) {
 
-                $deletedFileList[] = $file;
-                $deletedFilesCounter++;
+            // File sort
+            array_multisort($fileNames);
 
-                $reapedDirectories[dirname($file)] = true;
-                $DirHasChildren[dirname($file)]--;
+            foreach ($fileNames as $fileName) {
+                if (removeFile($dirName.DIRECTORY_SEPARATOR.$fileName)) {
+
+                    unset($knownDatas[$dirName][$fileName]);
+                    if (!count($knownDatas[$dirName]))
+                        unset($knownDatas[$dirName]);
+
+                    $deletedFileList[$dirName][] = $fileName;
+                    $deletedFilesCounter++;
+
+                    $reapedDirectories[$dirName] = true;
+                    $DirHasChildren[$dirName]--;
+                }
             }
         }
 
@@ -731,7 +761,7 @@ function fileGrimReaper ($dirToScan)
                 if (! removeDirectory($path)) {
                     $failedRemovalCounter++;
                 } else {
-                    //cprint('Removed emty (old) directory: ', $path);
+                    //cprint('Removed empty (old) directory: ', $path);
                     $expiredDeletedCounter++;
 
                     // decrease parent children number, this won't be enough to trigger a deletion since we just changed the directory modtime.
@@ -758,42 +788,46 @@ function fileGrimReaper ($dirToScan)
         {
 
             $sequenceStart = false; $skippedCount = 0;
-            $cprintFile = function ($file) { cprint ('"', $file, '"', " removed!"); };
-            $isLast = function ($i) use (&$deletedFileList) { return ($i == (count($deletedFileList) - 1)); } ;
+            $cprintFile = function ($file) { cprint ("\t", '"', $file, '"', " removed!"); };
+            $lastIndex = 0;
+            $isLast = function ($i) use (&$lastIndex) { return ($i == $lastIndex); };
 
-            for ($i=0 ; $i < count($deletedFileList) ; $i++) {
 
-                $file = $deletedFileList[$i];
+            foreach($deletedFileList as $dirName => $fileNames) {
+                $lastIndex = count($fileNames) - 1;
+                cprint("Directory: '$dirName':");
+                foreach($fileNames as $i => $fileName) {
 
-                // Are we inside a sequentially-numbered file list?
-                $inSequence = $i > 0
-                    && ! $isLast ($i)
-                    && IsStringInc($deletedFileList[$i - 1], $deletedFileList[$i]);
+                    // Are we inside a sequentially-numbered file list?
+                    $inSequence = $i > 0
+                        && ! $isLast ($i)
+                        && IsStringInc($fileNames[$i - 1], $fileNames[$i]);
 
-                // We are not and were not inside a file sequence
-                if (! $inSequence && ! $skippedCount) {
-                    // let's echo the file name then...
-                    $cprintFile ($file);
-                } else
-                    ++$skippedCount;
+                    // We are not and were not inside a file sequence
+                    if (! $inSequence && ! $skippedCount) {
+                        // let's echo the file name then...
+                        $cprintFile ($fileName);
+                    } else
+                        ++$skippedCount;
 
-                if (! $inSequence && $skippedCount) {
+                    if (! $inSequence && $skippedCount) {
 
-                    // display the number of file we skipped echoing
-                    if ($skippedCount > 1 )
-                        cprint ("[...] ", '(', $skippedCount - 1 - !$isLast ($i), ' files)');
+                        // display the number of file we skipped echoing
+                        if ($skippedCount - 1 - !$isLast ($i) > 1 )
+                            cprint ("[...] ", '(', $skippedCount - 1 - !$isLast ($i), ' files)');
 
-                    // if we haven't reached the end of the list
-                    if ( ! $isLast ($i) )
-                        // we echo the last file of the sequence
-                        $cprintFile ($deletedFileList[$i - 1]);
+                        // if we haven't reached the end of the list
+                        if ( ! $isLast ($i) )
+                            // we echo the last file of the sequence
+                            $cprintFile ($fileNames[$i - 1]);
 
-                    // echo the file we're on since it wasn't displayed
-                    $cprintFile ($file);
+                        // echo the file we're on since it wasn't displayed
+                        $cprintFile ($fileName);
 
-                    $skippedCount = 0;
+                        $skippedCount = 0;
+                    }
+
                 }
-
             }
 
             if ($deletedFilesCounter)
@@ -827,11 +861,9 @@ function fileGrimReaper ($dirToScan)
 
 
         saveDirectoryScannedDatas($dirPath, $knownDatas);
+        unset($knownDatas, $deletedFileList, $DirHasChildren, $filesToDelete);
 
     }
-
-    return $filesToDelete;
-
 }
 
 
