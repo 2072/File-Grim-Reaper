@@ -2,7 +2,7 @@
 
 /* File Grim Reaper v1.0 - It will reap your files!
  * (c) 2011-2013 John Wellesz
- *   
+ *
  *  This file is part of File Grim Reaper.
  *
  *  Project home:
@@ -158,25 +158,25 @@ Bug reports/Suggestions:
 
     -c, --config    Uses the specified configuration file.
 
-    -l, --logging   Creates log files for each configured directories. The log 
+    -l, --logging   Creates log files for each configured directories. The log
                     files will be stored in a 'Logs' sub-folder in the
-                    'FileGrimReaper-Datas' directory. The log file will be 
+                    'FileGrimReaper-Datas' directory. The log file will be
                     named in the following way: COMPUTERNAME_SANITIZED-PATH.log
-                    The log file will be written if and only if something 
-                    changed in the monitored folder. The number of new and 
-                    modified files is given as well as the full path of every 
+                    The log file will be written if and only if something
+                    changed in the monitored folder. The number of new and
+                    modified files is given as well as the full path of every
                     deleted file.
 
     -y, --daylightsavingbug
                     On Microsoft Windows platforms, on some filesystems (such
-                    as FAT or network shares), there is a "feature" that makes 
-                    filemtime() report a different file modification time 
+                    as FAT or network shares), there is a "feature" that makes
+                    filemtime() report a different file modification time
                     wether Daylight Saving is active or not.
 
-                    This option enables the detection of this bug to prevent 
-                    files from appearing modified (and thus resetting their 
+                    This option enables the detection of this bug to prevent
+                    files from appearing modified (and thus resetting their
                     expiry) when DLS status changes.
-                    There is one caveat though: if a file is replaced with a 
+                    There is one caveat though: if a file is replaced with a
                     file whose modification time is exactly one hour apart from
                     the original file (and older than a day), the file expiry
                     won't be reset and the file will be deleted sooner than
@@ -321,7 +321,7 @@ function isMTimeTheSame ($a, $b)
     if ($a == $b)
         return true;
 
-    // if the difference is exactly 1 hour and the file is older than 1 day, 
+    // if the difference is exactly 1 hour and the file is older than 1 day,
     // it's a fucking daylight saving issue (thank you Microsoft)
     if ( DAYLIGHTSAVINGBUG && (abs($a-$b) == 3600) && (NOW - $a > 86400) )
         return true;
@@ -545,8 +545,8 @@ function fileGrimReaper ($dirToScan)
 
                 // initialize the per directory child counter
                 if ($fileinfo->isDir() && ! $fileinfo->isLink() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
-                    // Mark the directory as empty the first time we see it, 
-                    // because if there are no file in it, it's the only time 
+                    // Mark the directory as empty the first time we see it,
+                    // because if there are no file in it, it's the only time
                     // we'll see it.
                     $DirHasChildren[$fileinfo->getPathname()] = 0;
                 }
@@ -638,21 +638,21 @@ function fileGrimReaper ($dirToScan)
         $deletedFilesCounter    = 0;
         $reapedDirectories      = array(); // used to remove empty dirs after deleting files
 
-	// delete the files in order so the delete logs are readable
-	sort($filesToDelete);
-	for ($i=0 ; $i < count($filesToDelete) ; $i++) {
-	    $file = $filesToDelete[$i];
+        // delete the files in order so the delete logs are readable
+        sort($filesToDelete);
+        for ($i=0 ; $i < count($filesToDelete) ; $i++) {
+            $file = $filesToDelete[$i];
 
-	    if (removeFile($file)) {
-		unset($knownDatas[$file]);
+            if (removeFile($file)) {
+                unset($knownDatas[$file]);
 
-		$deletedFileList[] = $file;
-		$deletedFilesCounter++;
+                $deletedFileList[] = $file;
+                $deletedFilesCounter++;
 
-		$reapedDirectories[dirname($file)] = true;
-		$DirHasChildren[dirname($file)]--;
-	    }
-	}
+                $reapedDirectories[dirname($file)] = true;
+                $DirHasChildren[dirname($file)]--;
+            }
+        }
 
 
         /* ################################
@@ -702,7 +702,7 @@ function fileGrimReaper ($dirToScan)
                     $reapedDeletedCounter++;
 
                     // decrease parent children number, this will be enough to trigger a deletion (since we go from
-                    // the child to the parent) but not a deletion of a parent directory containing only directories 
+                    // the child to the parent) but not a deletion of a parent directory containing only directories
                     // where no files were reaped.
                     if (--$DirHasChildren[dirname($path)] < 0)
                         error("Impossible Error #3: too many elements: ", $DirHasChildren[dirname($path)]);
@@ -761,9 +761,9 @@ function fileGrimReaper ($dirToScan)
             $cprintFile = function ($file) { cprint ('"', $file, '"', " removed!"); };
             $isLast = function ($i) use (&$deletedFileList) { return ($i == (count($deletedFileList) - 1)); } ;
 
-	    for ($i=0 ; $i < count($deletedFileList) ; $i++) {
+            for ($i=0 ; $i < count($deletedFileList) ; $i++) {
 
-		$file = $deletedFileList[$i];
+                $file = $deletedFileList[$i];
 
                 // Are we inside a sequentially-numbered file list?
                 $inSequence = $i > 0
