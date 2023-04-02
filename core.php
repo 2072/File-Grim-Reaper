@@ -26,10 +26,12 @@
  */
 
 const VERSION = "1";
-const REVISION = "1.0";
+const REVISION = "2.0";
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
+
+$pid_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'fileGrimReaper.pid';
 
 clearstatcache();
 
@@ -44,7 +46,49 @@ const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
 define ( 'NOW', time() );
 
+ini_set('memory_limit','3096M');
 
+
+$old_umaks = umask(0);
+
+
+function isProcessRunning($pid) {
+    if (!is_numeric($pid)) {
+        throw new InvalidArgumentException("PID must be a number");
+    }
+
+    $output = '';
+    $return = null;
+    $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+    $command = $isWindows ? 'tasklist /FI "PID eq '.$pid.'" 2>NUL | find /I "'.$pid.'">NUL' : 'ps -p '.$pid;
+
+    $process = proc_open(
+        $command,
+        [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes
+    );
+
+    if (is_resource($process)) {
+        fclose($pipes[0]);
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $errorOutput = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        $return = proc_close($process);
+    }
+
+   if (!empty($errorOutput)) {
+        error("Process running check command '$command' failed: $errorOutput");
+        return false;
+    }
+
+    return $isWindows ? $return === 0 : $output !== '';
+}
 
 function removeFile ($path)
 {
@@ -73,7 +117,7 @@ function cprint ()
 {
     $args = func_get_args();
 
-    $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n";
+    $toPrint = str_replace("\n", "\r\n", implode("", $args))."\r\n";
 
     addToLog($toPrint);
 
@@ -99,7 +143,7 @@ function temp_cprint()
     //write something and place the cursor back where it was
     $args = func_get_args();
 
-    $toPrint = str_replace("\n", "\r\n", implode($args, ""));
+    $toPrint = str_replace("\n", "\r\n", implode("", $args));
 
     $written = fwrite(STDOUT, $toPrint);
 
@@ -117,7 +161,7 @@ function printHeader ()
 
     if ($argc > 1)
 
-        cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2013 John Wellesz\n",
+        cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2023 John Wellesz\n",
             <<<SHORTWELCOME
 
     This program comes with ABSOLUTELY NO WARRANTY.
@@ -128,7 +172,7 @@ SHORTWELCOME
     );
 
     else
-        cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2013 John Wellesz\n",
+        cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2023 John Wellesz\n",
 
             <<<LONGWELCOME
 
@@ -209,7 +253,7 @@ function error ()
         $args[] = $last_error['message'];
     }
 
-    $toPrint = str_replace("\n", "\r\n", implode($args, ""))."\r\n";
+    $toPrint = str_replace("\n", "\r\n", implode("", $args))."\r\n";
     fwrite(STDERR, $toPrint);
 
     addToLog($toPrint);
@@ -227,15 +271,15 @@ function IsStringInc($str_1, $str_2) {
     $diffs = array(); $d = 0; $diffOffset = 0;
     for ($i=0; $i < strlen($str_1); ++$i) {
 
-        if ($str_1{$i} != $str_2{$i}) {
+        if ($str_1[$i] != $str_2[$i]) {
 
             $diffOffset = $i - $d;
 
             if (!isset ($diffs[$diffOffset]))
                 $diffs[$diffOffset] = array (array(),array());
 
-            $diffs[$diffOffset][0][]  =  $str_1{$i};
-            $diffs[$diffOffset][1][]  =  $str_2{$i};
+            $diffs[$diffOffset][0][]  =  $str_1[$i];
+            $diffs[$diffOffset][1][]  =  $str_2[$i];
 
             ++$d;
         }
@@ -283,6 +327,8 @@ function errorExit($code)
 
     call_user_func_array("error", $args);
 
+    global $old_umaks;
+    umask($old_umaks);
     exit ($code);
 }
 
@@ -305,7 +351,7 @@ function isDirValid ($name)
     );
 
     if ( preg_match($nameFormat, $name, $matches) ) {
-        if ( is_dir ($name)) {
+        if ( is_dir ($name) || mkdir($name, 0777)) {
             return array ('name' => $matches[1], 'duration' => $matches[2] * $timeMultiplicators [ $matches[3] ]);
         } else
             $badDir = "Directory '$name' cannot be found!";
@@ -373,8 +419,11 @@ function GetAndSetOptions ()
         if ($argc > 1) {
             printUsage ();
             errorExit(1, "Action is missing!");
-        } else
-            exit(0);
+	} else {
+		global $old_umaks;
+		umask($old_umaks);
+		exit(0);
+	}
     }
 
     if (! empty($setOptions['c']) || ! empty($setOptions['config'])) {
@@ -517,355 +566,379 @@ function saveDirectoryScannedDatas ($path, $datas)
     $LOGFILEPATH = false;
 }
 
+$pathPidFile = "";
 function fileGrimReaper ($dirToScan)
 {
+	global $pathPidFile, $pid_file;
+
+
+	// sort directories so the shortest durations are scanned first
+	uasort($dirToScan, function($a, $b) {$a = $a['duration']; $b=$b['duration']; return ($a < $b) * -1 + ($a > $b) * 1; });
 
-    // sort directories so the shortest durations are scanned first
-    uasort($dirToScan, function($a, $b) {$a = $a['duration']; $b=$b['duration']; return ($a < $b) * -1 + ($a > $b) * 1; });
-
-    foreach ($dirToScan as $dirPath=>$dirParam) {
-
-        $start          = microtime(true);
-        $lastScanned    = 0;
-        // get previous scan datas
-        if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned)))
-            continue;
-
-
-        // The log file is named after the directory being checked so...
-        unlogged_cprint("Now considering files in: ", $dirPath, '...');
-
-
-        if ( (NOW - $lastScanned) < RESPITE * 60 * 60 && $dirParam['duration'] > 2 * RESPITE * 60 * 60) {
-            unlogged_cprint("Skipping (snapshot is just ", sprintf("%0.1f", (NOW - $lastScanned) / 3600)," hours and life is ", sprintf("%0.1f", $dirParam['duration'] / 86400), " days)");
-            continue;
-        }
-
-        /* ########################################
-         * # Take a new snapshot of the directory #
-         * ########################################
-         */
-
-        unlogged_cprint("\tTaking a new snapshot...");
-        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath, FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
-
-        $NewSnapShot        = [];
-        $DirHasChildren     = [];
-        $FoundFilesCounter  = 0;
-
-        if ( $iterator ) {
-            foreach ($iterator as $file=>$fileinfo) {
-
-                // initialize the per directory child counter
-                if ($fileinfo->isDir() && ! $fileinfo->isLink() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
-                    // Mark the directory as empty the first time we see it,
-                    // because if there are no file in it, it's the only time
-                    // we'll see it.
-                    $DirHasChildren[$fileinfo->getPathname()] = 0;
-                }
-
-                // Count elements, increment the child number of the parent directory
-                if (! isset($DirHasChildren[$fileinfo->getPath()]))
-                    $DirHasChildren[$fileinfo->getPath()] = 1;
-                else
-                    $DirHasChildren[$fileinfo->getPath()]++;
-
-                //If it's not a file
-                if (! $fileinfo->isFile() && ! $fileinfo->isLink()) {
-
-                    // If neither file or directory, then we have a problem
-                    if (! $fileinfo->isDir())
-                        error("'$file' is immortal... It needs renaming so it can be reaped when its time comes.");
-
-                    continue;
-                }
-
-                $NewSnapShot[$fileinfo->getPath()][basename($fileinfo->getPathname())] = [
-                    FOUND_ON => time(),
-                    FILE_M_TIME => $fileinfo->getMTime(),
-                ];
-                $FoundFilesCounter++;
-
-                if (! ($FoundFilesCounter % 100) )
-                    temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), DIRECTORY_SEPARATOR,"')");
-            }
-        } else {
-            error("Impossible to take snapshot for directory '", $dirToScan, "'...");
-            continue;
-        }
-
-        /* ################################################
-         * # Compare the new snapshot with the known data #
-         * ################################################
-         */
-
-        unlogged_cprint("\tComparing with saved snapshot...");
-
-        $ModifiedFilesCounter       = 0;
-        $DisappearedFilesCounter    = 0;
-        $filesToDelete              = [];
-
-        foreach ($knownDatas as $dirName=>$dirItems)
-            foreach ($dirItems as $fileName=>$times) {
-                // if the file is still there
-                if (isset($NewSnapShot[$dirName][$fileName])) {
-
-                    // If the file has NOT been modified since the last scan,
-                    // check if it's elligeable for deletion
-                    if (isMTimeTheSame( $NewSnapShot[$dirName][$fileName][FILE_M_TIME], $times[FILE_M_TIME])) {
-                        if ($times[FOUND_ON] + $dirParam['duration'] < NOW)
-                            $filesToDelete[$dirName][] = $fileName;
-                    } else {
-                        // treat as a new file
-                        $knownDatas[$dirName][$fileName][FOUND_ON] = NOW;
-                        $knownDatas[$dirName][$fileName][FILE_M_TIME] = $NewSnapShot[$dirName][$fileName][FILE_M_TIME];
-                        $ModifiedFilesCounter++;
-                    }
-
-                } else {
-                    // the file is no longer there so delete its entry in $KnownDatas
-                    // this is where the list is cleaned
-                    unset ($knownDatas[$dirName][$fileName]);
-                    $DisappearedFilesCounter++;
-
-                    if (!count($knownDatas[$dirName]))
-                        unset($knownDatas[$dirName]);
-                }
-            }
-
-        /* ################################
-         * # Add new items to $knownDatas #
-         * ################################
-         */
-
-        $NewFilesCounter        = 0;
-        foreach ($NewSnapShot as $dirName=>$dirItems)
-            foreach ($dirItems as $fileName=>$times)
-                if (! isset ($knownDatas[$dirName][$fileName])) {
-                    $knownDatas[$dirName][$fileName] = $times;
-                    $NewFilesCounter++;
-                }
-
-        unset($NewSnapShot);
-
-        /* ##########################
-         * # Reap the expired files #
-         * ##########################
-         */
-
-        unlogged_cprint("\tReaping expired files...");
-        $deletedFileList        = [];
-        $deletedFilesCounter    = 0;
-        $reapedDirectories      = []; // used to remove empty dirs after deleting files
-
-        // Delete the files in a sorted order so the delete log is readable
-        // Dir sort:
-        array_multisort($filesToDelete);
-
-        foreach($filesToDelete as $dirName => $fileNames) {
-
-            // File sort
-            array_multisort($fileNames);
-
-            foreach ($fileNames as $fileName) {
-                if (removeFile($dirName.DIRECTORY_SEPARATOR.$fileName)) {
-
-                    unset($knownDatas[$dirName][$fileName]);
-                    if (!count($knownDatas[$dirName]))
-                        unset($knownDatas[$dirName]);
-
-                    $deletedFileList[$dirName][] = $fileName;
-                    $deletedFilesCounter++;
-
-                    $reapedDirectories[$dirName] = true;
-                    $DirHasChildren[$dirName]--;
-                }
-            }
-        }
-
-
-        /* ################################
-         * #  Removed orphaned directory  #
-         * ################################
-         */
-
-        unlogged_cprint("\tRemoving orphaned directories...");
-
-        // Protect the base directory from deletion (adding a virtual child)
-        if (!isset($DirHasChildren[$dirPath]))
-            $DirHasChildren[$dirPath] = 1;
-        else
-            $DirHasChildren[$dirPath]++;
-
-
-        // sort the array using the path depth, the deepest first
-        if (!
-            uksort ($DirHasChildren, function ($a, $b) {
-                if (getDirectoryDepth($a) == getDirectoryDepth($b))
-                    return 0;
-
-                if (getDirectoryDepth($a) > getDirectoryDepth($b))
-                    return -1;
-
-                if (getDirectoryDepth($a) < getDirectoryDepth($b))
-                    return 1;
-            }
-        ))
-            error ("uksort() failed.");
-
-        // deleted directories counters
-        $reapedDeletedCounter   = 0;
-        $expiredDeletedCounter  = 0;
-        $deadEndDeletedCounter  = 0;
-        $failedRemovalCounter   = 0;
-        $DirIsDeadEnd           = array();
-
-        foreach ($DirHasChildren as $path=>$_notused_)
-            // the directory is empty and files were reaped inside it
-            if ( !$DirHasChildren[$path] && isset($reapedDirectories[$path])) {
-
-                if (! removeDirectory($path) ) {
-                    $failedRemovalCounter++;
-                } else {
-                    //cprint('Removed empty (reaped) directory: ', $path);
-                    $reapedDeletedCounter++;
-
-                    // decrease parent children number, this will be enough to trigger a deletion (since we go from
-                    // the child to the parent) but not a deletion of a parent directory containing only directories
-                    // where no files were reaped.
-                    if (--$DirHasChildren[dirname($path)] < 0)
-                        error("Impossible Error #3: too many elements: ", $DirHasChildren[dirname($path)]);
-
-                    // if the directory is now empty, mark it for deletion
-                    if (! $DirHasChildren[dirname($path)])
-                        $DirIsDeadEnd[dirname($path)] = true;
-                }
-            } elseif (isset($DirIsDeadEnd[$path])) {
-                if (! removeDirectory($path)) {
-                    $failedRemovalCounter++;
-                } else {
-                    $deadEndDeletedCounter++;
-
-                    if (--$DirHasChildren[dirname($path)] < 0)
-                        error("Impossible Error #5: too many elements: ", $DirHasChildren[dirname($path)]);
-
-                    // if the directory is now empty, mark it for deletion
-                    if (! $DirHasChildren[dirname($path)])
-                        $DirIsDeadEnd[dirname($path)] = true;
-
-                }
-                // the directory is empty and is older than allowed duration
-            } elseif (!$DirHasChildren[$path] && (@filemtime($path) + $dirParam['duration'] < NOW)) {
-
-                if (! removeDirectory($path)) {
-                    $failedRemovalCounter++;
-                } else {
-                    //cprint('Removed empty (old) directory: ', $path);
-                    $expiredDeletedCounter++;
+	foreach ($dirToScan as $dirPath=>$dirParam) {
 
-                    // decrease parent children number, this won't be enough to trigger a deletion since we just changed the directory modtime.
-                    if (--$DirHasChildren[dirname($path)] < 0)
-                        error("Impossible Error #4: too many elements: ", $DirHasChildren[dirname($path)]);
-
-                    // if the directory is now empty, mark it for deletion
-                    if (! $DirHasChildren[dirname($path)])
-                        $DirIsDeadEnd[dirname($path)] = true;
-
-                }
-
-            }
-
-        $end = microtime(true);
-
-        /* ################################
-         * #   Report/Log what happened   #
-         * ################################
-         */
-
-        if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter || $DisappearedFilesCounter
-            || $expiredDeletedCounter || $deadEndDeletedCounter || $failedRemovalCounter)
-        {
-
-            $sequenceStart = false; $skippedCount = 0;
-            $cprintFile = function ($file) { cprint ("\t", '"', $file, '"', " removed!"); };
-            $lastIndex = 0;
-            $isLast = function ($i) use (&$lastIndex) { return ($i == $lastIndex); };
-
-
-            foreach($deletedFileList as $dirName => $fileNames) {
-                $lastIndex = count($fileNames) - 1;
-                cprint("Directory: '$dirName':");
-                foreach($fileNames as $i => $fileName) {
-
-                    // Are we inside a sequentially-numbered file list?
-                    $inSequence = $i > 0
-                        && ! $isLast ($i)
-                        && IsStringInc($fileNames[$i - 1], $fileNames[$i]);
-
-                    // We are not and were not inside a file sequence
-                    if (! $inSequence && ! $skippedCount) {
-                        // let's echo the file name then...
-                        $cprintFile ($fileName);
-                    } else
-                        ++$skippedCount;
-
-                    if (! $inSequence && $skippedCount) {
-
-                        // display the number of file we skipped echoing
-                        if ($skippedCount - 1 - !$isLast ($i) > 1 )
-                            cprint ("[...] ", '(', $skippedCount - 1 - !$isLast ($i), ' files)');
-
-                        // if we haven't reached the end of the list
-                        if ( ! $isLast ($i) )
-                            // we echo the last file of the sequence
-                            $cprintFile ($fileNames[$i - 1]);
-
-                        // echo the file we're on since it wasn't displayed
-                        $cprintFile ($fileName);
-
-                        $skippedCount = 0;
-                    }
-
-                }
-            }
-
-            if ($deletedFilesCounter)
-                // Add a new line for readability if we deleted files
-                cprint();
-
-            cprint("$FoundFilesCounter files considered:");
-
-            if ($ModifiedFilesCounter)      cprint ($ModifiedFilesCounter,      " files were modified.");
-            if ($NewFilesCounter)           cprint ($NewFilesCounter,           " files were new.");
-            if ($DisappearedFilesCounter)   cprint ($DisappearedFilesCounter,   " files disappeared.");
-            if ($deletedFilesCounter)       cprint ($deletedFilesCounter,       " files were removed.");
-
-            if ($expiredDeletedCounter) cprint ($expiredDeletedCounter, " expired-empty directories were removed.");
-
-            //if (! SHOW) { // Those values are not accurate in this mode
-            if ($reapedDeletedCounter)  cprint ($reapedDeletedCounter,  " now-empty directories were removed.");
-            if ($deadEndDeletedCounter) cprint ($deadEndDeletedCounter, " now-dead-end directories were removed.");
-            //}
-
-            if ($failedRemovalCounter)
-                error ($failedRemovalCounter, " directories couldn't be removed.");
-
-            if (SHOW)
-                cprint ('NOTE: Nothing was actually done (--show was set)');
-
-            cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
-
-        } else
-            unlogged_cprint ("Nothing to do. $FoundFilesCounter files were found.");
-
-
-        saveDirectoryScannedDatas($dirPath, $knownDatas);
-        unset($knownDatas, $deletedFileList, $DirHasChildren, $filesToDelete);
-
-    }
+		if (!empty($pathPidFile))
+			unlink ($pathPidFile);
+
+		$start          = microtime(true);
+		$lastScanned    = 0;
+		// get previous scan datas
+		if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned)))
+			continue;
+
+		// The log file is named after the directory being checked so...
+		unlogged_cprint("Now considering files in: ", $dirPath, '...');
+
+
+		// Check if another instance is already scanning this directory
+		$pathPidFile = $pid_file.".".crc32($dirPath);
+		if (file_exists($pathPidFile)) {
+			$pid = trim(file_get_contents($pathPidFile));
+			if (isProcessRunning($pid)) {
+				cprint( "Another instance is already running. Skipping.");
+				$pathPidFile = "";
+				continue;
+			} else {
+				unlink($pathPidFile);
+			}
+		}
+
+		file_put_contents($pathPidFile, getmypid());
+
+
+
+
+		if ( (NOW - $lastScanned) < RESPITE * 60 * 60 && $dirParam['duration'] > 2 * RESPITE * 60 * 60) {
+			unlogged_cprint("Skipping (snapshot is just ", sprintf("%0.1f", (NOW - $lastScanned) / 3600)," hours and life is ", sprintf("%0.1f", $dirParam['duration'] / 86400), " days)");
+			continue;
+		}
+
+		/* ########################################
+		 * # Take a new snapshot of the directory #
+		 * ########################################
+		 */
+
+		unlogged_cprint("\tTaking a new snapshot...");
+		$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath, FilesystemIterator::SKIP_DOTS),
+			RecursiveIteratorIterator::CHILD_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
+
+		$NewSnapShot        = [];
+		$DirHasChildren     = [];
+		$FoundFilesCounter  = 0;
+
+		if ( $iterator ) {
+			foreach ($iterator as $file=>$fileinfo) {
+
+				// initialize the per directory child counter
+				if ($fileinfo->isDir() && ! $fileinfo->isLink() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
+					// Mark the directory as empty the first time we see it,
+					// because if there are no file in it, it's the only time
+					// we'll see it.
+					$DirHasChildren[$fileinfo->getPathname()] = 0;
+				}
+
+				// Count elements, increment the child number of the parent directory
+				if (! isset($DirHasChildren[$fileinfo->getPath()]))
+					$DirHasChildren[$fileinfo->getPath()] = 1;
+				else
+					$DirHasChildren[$fileinfo->getPath()]++;
+
+				//If it's not a file
+				if (! $fileinfo->isFile() && ! $fileinfo->isLink()) {
+
+					// If neither file or directory, then we have a problem
+					if (! $fileinfo->isDir())
+						error("'$file' is immortal... It needs renaming so it can be reaped when its time comes.");
+
+					continue;
+				}
+
+				$NewSnapShot[$fileinfo->getPath()][basename($fileinfo->getPathname())] = [
+					FOUND_ON => time(),
+					FILE_M_TIME => $fileinfo->getMTime(),
+				];
+				$FoundFilesCounter++;
+
+				if (! ($FoundFilesCounter % 100) )
+					temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), DIRECTORY_SEPARATOR,"')");
+			}
+		} else {
+			error("Impossible to take snapshot for directory '", $dirToScan, "'...");
+			continue;
+		}
+
+		/* ################################################
+		 * # Compare the new snapshot with the known data #
+		 * ################################################
+		 */
+
+		unlogged_cprint("\tComparing with saved snapshot...");
+
+		$ModifiedFilesCounter       = 0;
+		$DisappearedFilesCounter    = 0;
+		$filesToDelete              = [];
+
+		foreach ($knownDatas as $dirName=>$dirItems)
+			foreach ($dirItems as $fileName=>$times) {
+				// if the file is still there
+				if (isset($NewSnapShot[$dirName][$fileName])) {
+
+					// If the file has NOT been modified since the last scan,
+					// check if it's elligeable for deletion
+					if (isMTimeTheSame( $NewSnapShot[$dirName][$fileName][FILE_M_TIME], $times[FILE_M_TIME])) {
+						if ($times[FOUND_ON] + $dirParam['duration'] < NOW)
+							$filesToDelete[$dirName][] = $fileName;
+					} else {
+						// treat as a new file
+						$knownDatas[$dirName][$fileName][FOUND_ON] = NOW;
+						$knownDatas[$dirName][$fileName][FILE_M_TIME] = $NewSnapShot[$dirName][$fileName][FILE_M_TIME];
+						$ModifiedFilesCounter++;
+					}
+
+				} else {
+					// the file is no longer there so delete its entry in $KnownDatas
+					// this is where the list is cleaned
+					unset ($knownDatas[$dirName][$fileName]);
+					$DisappearedFilesCounter++;
+
+					if (!count($knownDatas[$dirName]))
+						unset($knownDatas[$dirName]);
+				}
+			}
+
+		/* ################################
+		 * # Add new items to $knownDatas #
+		 * ################################
+		 */
+
+		$NewFilesCounter        = 0;
+		foreach ($NewSnapShot as $dirName=>$dirItems)
+			foreach ($dirItems as $fileName=>$times)
+				if (! isset ($knownDatas[$dirName][$fileName])) {
+					$knownDatas[$dirName][$fileName] = $times;
+					$NewFilesCounter++;
+				}
+
+		unset($NewSnapShot);
+
+		/* ##########################
+		 * # Reap the expired files #
+		 * ##########################
+		 */
+
+		unlogged_cprint("\tReaping expired files...");
+		$deletedFileList        = [];
+		$deletedFilesCounter    = 0;
+		$reapedDirectories      = []; // used to remove empty dirs after deleting files
+
+		// Delete the files in a sorted order so the delete log is readable
+		// Dir sort:
+		array_multisort($filesToDelete);
+
+		foreach($filesToDelete as $dirName => $fileNames) {
+
+			// File sort
+			array_multisort($fileNames);
+
+			foreach ($fileNames as $fileName) {
+				if (removeFile($dirName.DIRECTORY_SEPARATOR.$fileName)) {
+
+					unset($knownDatas[$dirName][$fileName]);
+					if (!count($knownDatas[$dirName]))
+						unset($knownDatas[$dirName]);
+
+					$deletedFileList[$dirName][] = $fileName;
+					$deletedFilesCounter++;
+
+					$reapedDirectories[$dirName] = true;
+					$DirHasChildren[$dirName]--;
+				}
+			}
+		}
+
+
+		/* ################################
+		 * #  Removed orphaned directory  #
+		 * ################################
+		 */
+
+		unlogged_cprint("\tRemoving orphaned directories...");
+
+		// Protect the base directory from deletion (adding a virtual child)
+		if (!isset($DirHasChildren[$dirPath]))
+			$DirHasChildren[$dirPath] = 1;
+		else
+			$DirHasChildren[$dirPath]++;
+
+
+		// sort the array using the path depth, the deepest first
+		if (!
+			uksort ($DirHasChildren, function ($a, $b) {
+				if (getDirectoryDepth($a) == getDirectoryDepth($b))
+					return 0;
+
+				if (getDirectoryDepth($a) > getDirectoryDepth($b))
+					return -1;
+
+				if (getDirectoryDepth($a) < getDirectoryDepth($b))
+					return 1;
+			}
+		))
+			error ("uksort() failed.");
+
+		// deleted directories counters
+		$reapedDeletedCounter   = 0;
+		$expiredDeletedCounter  = 0;
+		$deadEndDeletedCounter  = 0;
+		$failedRemovalCounter   = 0;
+		$DirIsDeadEnd           = array();
+
+		foreach ($DirHasChildren as $path=>$_notused_)
+			// the directory is empty and files were reaped inside it
+			if ( !$DirHasChildren[$path] && isset($reapedDirectories[$path])) {
+
+				if (! removeDirectory($path) ) {
+					$failedRemovalCounter++;
+				} else {
+					//cprint('Removed empty (reaped) directory: ', $path);
+					$reapedDeletedCounter++;
+
+					// decrease parent children number, this will be enough to trigger a deletion (since we go from
+					// the child to the parent) but not a deletion of a parent directory containing only directories
+					// where no files were reaped.
+					if (--$DirHasChildren[dirname($path)] < 0)
+						error("Impossible Error #3: too many elements: ", $DirHasChildren[dirname($path)]);
+
+					// if the directory is now empty, mark it for deletion
+					if (! $DirHasChildren[dirname($path)])
+						$DirIsDeadEnd[dirname($path)] = true;
+				}
+			} elseif (isset($DirIsDeadEnd[$path])) {
+				if (! removeDirectory($path)) {
+					$failedRemovalCounter++;
+				} else {
+					$deadEndDeletedCounter++;
+
+					if (--$DirHasChildren[dirname($path)] < 0)
+						error("Impossible Error #5: too many elements: ", $DirHasChildren[dirname($path)]);
+
+					// if the directory is now empty, mark it for deletion
+					if (! $DirHasChildren[dirname($path)])
+						$DirIsDeadEnd[dirname($path)] = true;
+
+				}
+				// the directory is empty and is older than allowed duration
+			} elseif (!$DirHasChildren[$path] && (@filemtime($path) + $dirParam['duration'] < NOW)) {
+
+				if (! removeDirectory($path)) {
+					$failedRemovalCounter++;
+				} else {
+					//cprint('Removed empty (old) directory: ', $path);
+					$expiredDeletedCounter++;
+
+					// decrease parent children number, this won't be enough to trigger a deletion since we just changed the directory modtime.
+					if (--$DirHasChildren[dirname($path)] < 0)
+						error("Impossible Error #4: too many elements: ", $DirHasChildren[dirname($path)]);
+
+					// if the directory is now empty, mark it for deletion
+					if (! $DirHasChildren[dirname($path)])
+						$DirIsDeadEnd[dirname($path)] = true;
+
+				}
+
+			}
+
+		$end = microtime(true);
+
+		/* ################################
+		 * #   Report/Log what happened   #
+		 * ################################
+		 */
+
+		if ($ModifiedFilesCounter || $NewFilesCounter || $deletedFilesCounter || $reapedDeletedCounter || $DisappearedFilesCounter
+			|| $expiredDeletedCounter || $deadEndDeletedCounter || $failedRemovalCounter)
+		{
+
+			$sequenceStart = false; $skippedCount = 0;
+			$cprintFile = function ($file) { cprint ("\t", '"', $file, '"', " removed!"); };
+			$lastIndex = 0;
+			$isLast = function ($i) use (&$lastIndex) { return ($i == $lastIndex); };
+
+
+			foreach($deletedFileList as $dirName => $fileNames) {
+				$lastIndex = count($fileNames) - 1;
+				cprint("Directory: '$dirName':");
+				foreach($fileNames as $i => $fileName) {
+
+					// Are we inside a sequentially-numbered file list?
+					$inSequence = $i > 0
+						&& ! $isLast ($i)
+						&& IsStringInc($fileNames[$i - 1], $fileNames[$i]);
+
+					// We are not and were not inside a file sequence
+					if (! $inSequence && ! $skippedCount) {
+						// let's echo the file name then...
+						$cprintFile ($fileName);
+					} else
+						++$skippedCount;
+
+					if (! $inSequence && $skippedCount) {
+
+						// display the number of file we skipped echoing
+						if ($skippedCount - 1 - !$isLast ($i) > 1 )
+							cprint ("[...] ", '(', $skippedCount - 1 - !$isLast ($i), ' files)');
+
+						// if we haven't reached the end of the list
+						if ( ! $isLast ($i) )
+							// we echo the last file of the sequence
+							$cprintFile ($fileNames[$i - 1]);
+
+						// echo the file we're on since it wasn't displayed
+						$cprintFile ($fileName);
+
+						$skippedCount = 0;
+					}
+
+				}
+			}
+
+			if ($deletedFilesCounter)
+				// Add a new line for readability if we deleted files
+				cprint();
+
+			cprint("$FoundFilesCounter files considered:");
+
+			if ($ModifiedFilesCounter)      cprint ($ModifiedFilesCounter,      " files were modified.");
+			if ($NewFilesCounter)           cprint ($NewFilesCounter,           " files were new.");
+			if ($DisappearedFilesCounter)   cprint ($DisappearedFilesCounter,   " files disappeared.");
+			if ($deletedFilesCounter)       cprint ($deletedFilesCounter,       " files were removed.");
+
+			if ($expiredDeletedCounter) cprint ($expiredDeletedCounter, " expired-empty directories were removed.");
+
+			//if (! SHOW) { // Those values are not accurate in this mode
+			if ($reapedDeletedCounter)  cprint ($reapedDeletedCounter,  " now-empty directories were removed.");
+			if ($deadEndDeletedCounter) cprint ($deadEndDeletedCounter, " now-dead-end directories were removed.");
+			//}
+
+			if ($failedRemovalCounter)
+				error ($failedRemovalCounter, " directories couldn't be removed.");
+
+			if (SHOW)
+				cprint ('NOTE: Nothing was actually done (--show was set)');
+
+			cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
+
+		} else
+			unlogged_cprint ("Nothing to do. $FoundFilesCounter files were found.");
+
+
+		saveDirectoryScannedDatas($dirPath, $knownDatas);
+		unset($knownDatas, $deletedFileList, $DirHasChildren, $filesToDelete);
+		unlink ($pathPidFile);
+		$pathPidFile = "";
+
+	}
 }
-
 
 printHeader();
 
@@ -873,6 +946,10 @@ GetAndSetOptions ();
 checkDataPath ();
 fileGrimReaper ( getConfig () );
 
+
+
+global $old_umaks;
+umask($old_umaks);
 
 
 exit((int)($ERRORCOUNT > 0));
