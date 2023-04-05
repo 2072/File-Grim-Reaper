@@ -87,7 +87,7 @@ function isProcessRunning($pid) {
         return false;
     }
 
-    return $isWindows ? $return === 0 : $output !== '';
+    return $isWindows ? $return === 0 : strpos($output, "$pid") !== false;
 }
 
 function removeFile ($path)
@@ -595,7 +595,7 @@ function fileGrimReaper ($dirToScan)
 		if (file_exists($pathPidFile)) {
 			$pid = trim(file_get_contents($pathPidFile));
 			if (isProcessRunning($pid)) {
-				cprint( "Another instance is already running. Skipping.");
+				cprint( "Another instance ($pid) is already running. Skipping.");
 				$pathPidFile = "";
 				continue;
 			} else {
