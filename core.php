@@ -1,7 +1,7 @@
 <?php
 
-/* File Grim Reaper v1.1 - It will reap your files!
- * (c) 2011-2019 John Wellesz
+/* File Grim Reaper v1.3 - It will reap your files!
+ * (c) 2011-2024 John Wellesz
  *
  *  This file is part of File Grim Reaper.
  *
@@ -26,7 +26,7 @@
  */
 
 const VERSION = "1";
-const REVISION = "2.0";
+const REVISION = "3";
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
@@ -152,7 +152,7 @@ function temp_cprint()
 
 function printUsage ()
 {
-    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " --reap | --show [--config configFilePath] [--logging] [--doNotCreateDirs]\n");
+    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " --reap | --show [--config=configFilePath] [--logging] [--doNotCreateDirs]\n");
 }
 
 function printHeader ()
@@ -161,7 +161,7 @@ function printHeader ()
 
     if ($argc > 1)
 
-        cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2023 John Wellesz\n",
+        cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2024 John Wellesz\n",
             <<<SHORTWELCOME
 
     This program comes with ABSOLUTELY NO WARRANTY.
@@ -172,7 +172,7 @@ SHORTWELCOME
     );
 
     else
-        cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2023 John Wellesz\n",
+        cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2024 John Wellesz\n",
 
             <<<LONGWELCOME
 
@@ -202,7 +202,8 @@ Bug reports/Suggestions:
     -s, --show      Shows what would happen with the --reap command (doesn't
                     actually remove anything and doesn't update snapshots).
 
-    -c, --config    Uses the specified configuration file.
+    -c=FilePath, --config=FilePath
+                    Uses the specified paths configuration file (one path per line).
 
     -l, --logging   Creates log files for each configured directories. The log
                     files will be stored in a 'Logs' sub-folder in the
