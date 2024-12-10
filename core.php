@@ -152,7 +152,7 @@ function temp_cprint()
 
 function printUsage ()
 {
-    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " --reap | --show [--config configFilePath] [--logging]\n");
+    cprint ( "Usage: ", $_SERVER['PHP_SELF'], " --reap | --show [--config configFilePath] [--logging] [--doNotCreateDirs]\n");
 }
 
 function printHeader ()
@@ -227,6 +227,11 @@ Bug reports/Suggestions:
                     the original file (and older than a day), the file expiry
                     won't be reset and the file will be deleted sooner than
                     expected.
+
+    -d, --doNotCreateDirs
+                    Do not create missing directories in the configuration
+                    file. The default is to create those directories if they are defined as some
+                    users tend to remove them either by accident or ignorance.
 
 LONGWELCOME
     );
@@ -351,7 +356,7 @@ function isDirValid ($name)
     );
 
     if ( preg_match($nameFormat, $name, $matches) ) {
-        if ( is_dir ($name) || mkdir($name, 0777)) {
+        if ( is_dir ($name) || (!DONOTCREATEDIRS && mkdir($name, 0777))) {
             return array ('name' => $matches[1], 'duration' => $matches[2] * $timeMultiplicators [ $matches[3] ]);
         } else
             $badDir = "Directory '$name' cannot be found!";
@@ -385,9 +390,10 @@ function GetAndSetOptions ()
         "reap",
         "logging",
         "daylightsavingbug",
+        "doNotCreateDirs"
     );
 
-    $setOptions = getopt("c::srly", $longOptions);
+    $setOptions = getopt("c::srlyd", $longOptions);
 
 
     if (isset($setOptions['s']) || isset($setOptions['show']))
@@ -409,6 +415,11 @@ function GetAndSetOptions ()
         define ('DAYLIGHTSAVINGBUG', true);
     else
         define ('DAYLIGHTSAVINGBUG', false);
+
+    if (isset($setOptions['d']) || isset($setOptions['doNotCreateDirs']))
+        define ('DONOTCREATEDIRS', true);
+    else
+        define ('DONOTCREATEDIRS', false);
 
     if (SHOW && REAP)
         errorExit(1, '--reap and --show options are exclusive!');
