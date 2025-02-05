@@ -26,7 +26,7 @@
  */
 
 const VERSION = "1";
-const REVISION = "4";
+const REVISION = "5";
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
@@ -45,6 +45,7 @@ ini_set('error_log', dirname(realpath(__FILE__)) . "/".UNAME."_errors.log");
 const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
 define ( 'NOW', time() );
+define ( 'ISWINDOWS',  strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
 ini_set('memory_limit','3096M');
 
@@ -59,8 +60,7 @@ function isProcessRunning($pid) {
 
     $output = '';
     $return = null;
-    $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-    $command = $isWindows ? 'tasklist /FI "PID eq '.$pid.'" 2>NUL | find /I "'.$pid.'">NUL' : 'ps -p '.$pid;
+    $command = ISWINDOWS ? 'tasklist /FI "PID eq '.$pid.'" 2>NUL | find /I "'.$pid.'">NUL' : 'ps -p '.$pid;
 
     $process = proc_open(
         $command,
@@ -87,13 +87,14 @@ function isProcessRunning($pid) {
         return false;
     }
 
-    return $isWindows ? $return === 0 : strpos($output, "$pid") !== false;
+    return ISWINDOWS ? $return === 0 : strpos($output, "$pid") !== false;
 }
 
 function removeFile ($path)
 {
     if (! SHOW && ! @unlink($path)) {
-        if (! (@chmod( $path, 0777 ) && @unlink($path)))
+        // Note that on window$ one needs to use rmdir on symbolic links pointing to directories... micro$oft never fails to disappoint!
+        if (!(@chmod($path, 0777) && @unlink($path)) && (!ISWINDOWS || !@rmdir($path)))
             error("Couldn't remove '$path'");
         else
             return true;
