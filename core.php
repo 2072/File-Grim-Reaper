@@ -1,7 +1,7 @@
 <?php
 
 /* File Grim Reaper v1.3 - It will reap your files!
- * (c) 2011-2024 John Wellesz
+ * (c) 2011-2025 John Wellesz
  *
  *  This file is part of File Grim Reaper.
  *
@@ -26,7 +26,7 @@
  */
 
 const VERSION = "1";
-const REVISION = "3";
+const REVISION = "4";
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
@@ -161,7 +161,7 @@ function printHeader ()
 
     if ($argc > 1)
 
-        cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2024 John Wellesz\n",
+        cprint ("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2025 John Wellesz\n",
             <<<SHORTWELCOME
 
     This program comes with ABSOLUTELY NO WARRANTY.
@@ -172,7 +172,7 @@ SHORTWELCOME
     );
 
     else
-        cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2024 John Wellesz\n",
+        cprint("\nFile Grim Reaper version ",VERSION,".",REVISION," Copyright (C) 2011-2025 John Wellesz\n",
 
             <<<LONGWELCOME
 
@@ -381,6 +381,25 @@ function isMTimeTheSame ($a, $b)
         return true;
 
     return false;
+}
+
+function getPathMTime($path) {
+    $stats = @lstat($path);
+    if (is_array($stats) && isset($stats['mtime'])) {
+        return (int)$stats['mtime'];
+    }
+    error("Could not get modification time of '$path'");
+    return false;
+}
+
+function getSplInfoSafeMTime(SplFileInfo $splinfo) {
+   try {
+        // Attempt to get the modification time normally.
+        return !$splinfo->isLink() ? $splinfo->getMTime() : getPathMTime($splinfo->getPathname());
+    } catch (Exception $e) {
+        // Fallback: use lstat to get the mtime of the link itself.
+        return getPathMTime($splinfo->getPathname());
+    }
 }
 
 function GetAndSetOptions ()
@@ -663,11 +682,16 @@ function fileGrimReaper ($dirToScan)
 						error("'$file' is immortal... It needs renaming so it can be reaped when its time comes.");
 
 					continue;
-				}
+                }
+
+                if (false === ($fileSafeMTime = getSplInfoSafeMTime($fileinfo))) {
+                    error("'$file' is impervious to our time scanner! Its modification time could not be determined...");
+                    continue;
+                }
 
 				$NewSnapShot[$fileinfo->getPath()][basename($fileinfo->getPathname())] = [
 					FOUND_ON => time(),
-					FILE_M_TIME => $fileinfo->getMTime(),
+					FILE_M_TIME => getSplInfoSafeMTime($fileinfo),
 				];
 				$FoundFilesCounter++;
 
