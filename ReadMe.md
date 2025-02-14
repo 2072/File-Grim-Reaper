@@ -34,14 +34,14 @@ The folder names have to respect the following format:
 
     (\w+)__TO_KEEP_(\d+)_(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$
 
-**Exemple of a configuration file on a Windows machine:**
+**Example of a configuration file on a Windows machine:**
 
     O:\____AUTODELETE__TO_KEEP_7_DAYS
     O:\____AUTODELETE__TO_KEEP_1_MONTH
 
     C:\Documents and Settings\All Users\Desktop\TEMP__TO_KEEP_2_HOURS
 
-**Exemple of a configuration file on a Unix machine:**
+**Example of a configuration file on a Unix machine:**
 
     /Volumes/Stripe/___AUTODELETE___TO_KEEP_1_DAY
     /Volumes/Stripe/___AUTODELETE___TO_KEEP_7_DAYS
@@ -66,39 +66,48 @@ Example:
     HV-NODAL2_O-____AUTODELETE__TO_KEEP_7_DAYS.data.serialized
     pglmac15_-Volumes-Stripe_PGLMAC15-___AUTODELETE___TO_KEEP_1_MONTH.data.serialized
 
-Additionally if internal errors occur, such as a PHP exception, a file "computer-name_errors.log" 
+Additionally if internal errors occur, such as a PHP exception, a file "computer-name_errors.log"
 will be created in FileGrimReaper.php's directory.
 
 
 ## Options
 
-    -r, --reap	    Removes expired files and directories and updates snapshots.
+    -r, --reap      Removes expired files, directories and updates snapshots.
 
-    -s, --show	    Shows what would happen with the --reap command (doesn't
-		    actually remove anything and doesn't update snapshots).
+    -s, --show      Shows what would happen with the --reap command (doesn't
+                    actually remove anything and doesn't update snapshots).
 
-    -c, --config    Uses the specified configuration file.
+    -c=FilePath, --config=FilePath
+                    Uses the specified paths configuration file (one path per line).
 
-    -l, --logging   Creates log files for each configured directories. The log files
-		    will be stored in a 'Logs' sub-folder in the 'FileGrimReaper-Datas' directory.
-		    The log file will be named in the following way:
-		    COMPUTERNAME_SANITIZED-PATH.log
-		    The log file will be written if and only if something changed
-		    in the monitored folder. The number of new and modified files is given as well
-		    as the full path of every deleted file.
+    -l, --logging   Creates log files for each configured directories. The log
+                    files will be stored in a 'Logs' sub-folder in the
+                    'FileGrimReaper-Datas' directory. The log file will be
+                    named in the following way: COMPUTERNAME_SANITIZED-PATH.log
+                    The log file will be written if and only if something
+                    changed in the monitored folder. The number of new and
+                    modified files is given as well as the full path of every
+                    deleted file.
 
     -y, --daylightsavingbug
-		    On Microsoft Windows platforms, on some filesystems (such as
-		    FAT or network shares), there is a "feature" that makes filemtime() report a
-		    different file modification time wether Daylight Saving is active or not.
+                    On Microsoft Windows platforms, on some filesystems (such
+                    as FAT or network shares), there is a "feature" that makes
+                    filemtime() report a different file modification time
+                    wether Daylight Saving is active or not.
 
-		    This option enables the detection of this bug to prevent files
-		    from appearing modified (and thus resetting their expiry) when DLS status
-		    changes.
-		    There is one caveat though: if a file is replaced with a file
-		    whose modification time is exactly one hour apart from the
-		    original file (and older than a day), the file expiry won't be
-		    reset and the file will be deleted sooner than expected.
+                    This option enables the detection of this bug to prevent
+                    files from appearing modified (and thus resetting their
+                    expiry) when DLS status changes.
+                    There is one caveat though: if a file is replaced with a
+                    file whose modification time is exactly one hour apart from
+                    the original file (and older than a day), the file expiry
+                    won't be reset and the file will be deleted sooner than
+                    expected.
+
+    -d, --doNotCreateDirs
+                    Do not create missing directories in the configuration
+                    file. The default is to create those directories if they are defined as some
+                    users tend to remove them either by accident or ignorance.
 
 ## Usage
 
@@ -139,9 +148,9 @@ In a folder "/Volumes/Data/Scrips" create a bash file containing:
 
     #!/bin/bash
 
-    cd /Volumes/Small_PgLMAc15/Scripts/FileGrimReaper 
+    cd /Volumes/Small_PgLMAc15/Scripts/FileGrimReaper
 
-    /usr/bin/php-5.3.8/php /Volumes/Team_Virtuel/Utils/Scripts/FileGrimReaper/FileGrimReaper.php --reap --logging 2> /Volumes/Team_Virtuel/Utils/Scripts/FileGrimReaper/errors/PGLMAC15_LastError.txt 
+    /usr/bin/php-5.3.8/php /Volumes/Team_Virtuel/Utils/Scripts/FileGrimReaper/FileGrimReaper.php --reap --logging 2> /Volumes/Team_Virtuel/Utils/Scripts/FileGrimReaper/errors/PGLMAC15_LastError.txt
 
 Then make a file containing:
 

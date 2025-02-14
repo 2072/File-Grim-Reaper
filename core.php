@@ -1,6 +1,6 @@
 <?php
 
-/* File Grim Reaper v1.3 - It will reap your files!
+/* File Grim Reaper v1.5 - It will reap your files!
  * (c) 2011-2025 John Wellesz
  *
  *  This file is part of File Grim Reaper.
@@ -26,7 +26,7 @@
  */
 
 const VERSION = "1";
-const REVISION = "5";
+const REVISION = "5"; // Also remember to change the version at the top of both PHP files.
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
