@@ -1,6 +1,7 @@
 <?php
+declare(strict_types=1);
 
-/* File Grim Reaper v1.5 - It will reap your files!
+/* File Grim Reaper v1.6 - It will reap your files!
  * (c) 2011-2025 John Wellesz
  *
  *  This file is part of File Grim Reaper.
@@ -26,10 +27,13 @@
  */
 
 const VERSION = "1";
-const REVISION = "5"; // Also remember to change the version at the top of both PHP files.
+const REVISION = "6"; // Also remember to change the version at the top of both PHP files.
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
+
+
+require_once __DIR__ . '/src/classes.php';
 
 $pid_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'fileGrimReaper.pid';
 
@@ -40,18 +44,44 @@ if (! defined("PROPER_USAGE"))
 
 define ('UNAME', php_uname('n'));
 error_reporting ( E_ALL | E_STRICT );
-ini_set('error_log', dirname(realpath(__FILE__)) . "/".UNAME."_errors.log");
+ini_set('error_log', dirname(realpath(__FILE__)) . DIRECTORY_SEPARATOR .UNAME."_errors.log");
 
 const DEFAULT_CONFIG_FILE = "FileGrimReaper-paths.txt";
 
 define ( 'NOW', time() );
 define ( 'ISWINDOWS',  strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
-ini_set('memory_limit','3096M');
+ini_set('memory_limit','26G');
 
 
 $old_umaks = umask(0);
 
+
+
+function sortSplObjectStorage(
+    SplObjectStorage $storage,
+    callable $callback
+): SplObjectStorage {
+    $temp = [];
+    foreach ($storage as $obj) {
+        $temp[] = [$obj, $storage[$obj]];
+    }
+
+    usort($temp, $callback);
+
+    $sorted = new SplObjectStorage();
+    foreach ($temp as [$obj, $value]) {
+        $sorted[$obj] = $value;
+    }
+
+    return $sorted;
+}
+
+function sortByname(SplObjectStorage $storage): SplObjectStorage {
+    return sortSplObjectStorage($storage, function ($a, $b) {
+        return strnatcmp((string)$a[0], (string)$b[0]);
+    });
+}
 
 function isProcessRunning($pid) {
     if (!is_numeric($pid)) {
@@ -90,8 +120,11 @@ function isProcessRunning($pid) {
     return ISWINDOWS ? $return === 0 : strpos($output, "$pid") !== false;
 }
 
-function removeFile ($path)
+function removeFile (string | Path $path)
 {
+    if ($path instanceOf Path)
+        $path = (string)$path;
+
     if (! SHOW && ! @unlink($path)) {
         // Note that on window$ one needs to use rmdir on symbolic links pointing to directories... micro$oft never fails to disappoint!
         if (!(@chmod($path, 0777) && @unlink($path)) && (!ISWINDOWS || !@rmdir($path)))
@@ -104,9 +137,9 @@ function removeFile ($path)
     return false;
 }
 
-function removeDirectory ($path)
+function removeDirectory (string | Path $path)
 {
-    if (! SHOW && ! @rmdir($path))
+    if (! SHOW && ! @rmdir((string)$path))
         error();
     else
         return true;
@@ -322,9 +355,9 @@ function addToLog ($toWrite)
 }
 
 
-function getDirectoryDepth($path)
+function getDirectoryDepth(Path $path)
 {
-    return substr_count($path, '/') + substr_count($path, '\\');
+    return $path->getDepth();
 }
 
 function errorExit($code)
@@ -520,7 +553,7 @@ function getConfig ()
     return $directories;
 }
 
-function getDirectoryScannedDatas ($path, &$lastScanned=false)
+function getDirectoryScannedDatas ($path, &$lastScanned=false): SplObjectStorage
 {
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
@@ -542,9 +575,10 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false)
         $data = unserialize (file_get_contents($dataFileName));
 
         if (is_array($data)) {
-            // convert old format
+            // convert very old format
             $firstElement = current($data);
             if ($firstElement !== FALSE && isset($firstElement["foundOn"]) ) {
+                cprint("Converting snapshot from VERY old format...");
                 $cData = [];
                 foreach($data as $fullFilePath=>$times) {
                     $cData[dirname($fullFilePath)][basename($fullFilePath)] = [
@@ -554,16 +588,32 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false)
                 }
                 $data = $cData;
             }
+
+            $new = new SplObjectStorage();
+
+            cprint("Converting snapshot $dataFileName from old format...");
+            foreach ($data as $dir => $files) {
+                $path = Path::fromString($dir);
+                $new[$path] ??= new SplObjectStorage();
+
+                foreach ($files as $file => $info) {
+                    $new[$path][Name::get($file)] = $info;
+                }
+            }
+            cprint("Done: " . count($new) );
+
+            return $new;
+        } elseif ($data instanceOf SplObjectStorage) {
             return $data;
         } else {
             error('Error loading data for directory: ', $path);
             return false;
         }
     } else
-        return [];
+        return new SplObjectStorage();
 }
 
-function saveDirectoryScannedDatas ($path, $datas)
+function saveDirectoryScannedDatas ($path, SplObjectStorage $datas)
 {
     global $LOGFILEPATH;
 
@@ -598,6 +648,11 @@ function saveDirectoryScannedDatas ($path, $datas)
     $LOGFILEPATH = false;
 }
 
+function printStatus(): void {
+    unlogged_cprint("Name cache: ", number_format(Name::getPoolSize()), " -  Path cache: p-: ", number_format(Path::getCacheSizes()[0]), " - fc-: ", Path::getCacheSizes()[1],
+        " (max of ",number_format(memory_get_peak_usage() / 1024 / 1024) ," Mb of RAM used), ");
+}
+
 $pathPidFile = "";
 function fileGrimReaper ($dirToScan)
 {
@@ -607,7 +662,9 @@ function fileGrimReaper ($dirToScan)
 	// sort directories so the shortest durations are scanned first
 	uasort($dirToScan, function($a, $b) {$a = $a['duration']; $b=$b['duration']; return ($a < $b) * -1 + ($a > $b) * 1; });
 
-	foreach ($dirToScan as $dirPath=>$dirParam) {
+    foreach ($dirToScan as $dirPath=>$dirParam) {
+        Name::_resetPool();
+        Path::_reset();
 
 		if (!empty($pathPidFile))
 			unlink ($pathPidFile);
@@ -615,11 +672,12 @@ function fileGrimReaper ($dirToScan)
 		$start          = microtime(true);
 		$lastScanned    = 0;
 		// get previous scan datas
-		if (!is_array( $knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned)))
-			continue;
+        $knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned);
+
+        printStatus();
 
 		// The log file is named after the directory being checked so...
-		unlogged_cprint("Now considering files in: ", $dirPath, '...');
+		unlogged_cprint("\nNow considering files in: ", $dirPath, '...');
 
 
 		// Check if another instance is already scanning this directory
@@ -654,26 +712,28 @@ function fileGrimReaper ($dirToScan)
 		$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dirPath, FilesystemIterator::SKIP_DOTS),
 			RecursiveIteratorIterator::CHILD_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
 
-		$NewSnapShot        = [];
-		$DirHasChildren     = [];
+		$NewSnapShot        = new SplObjectStorage();
+		$DirHasChildren     = new SplObjectStorage();
 		$FoundFilesCounter  = 0;
+		$limitTripped       = false;
 
 		if ( $iterator ) {
 			foreach ($iterator as $file=>$fileinfo) {
 
 				// initialize the per directory child counter
-				if ($fileinfo->isDir() && ! $fileinfo->isLink() && ! isset($DirHasChildren[$fileinfo->getPathname()]) ) {
+				if ($fileinfo->isDir() && ! $fileinfo->isLink() && ! isset($DirHasChildren[Path::fromString($fileinfo->getPathName())]) ) {
 					// Mark the directory as empty the first time we see it,
 					// because if there are no file in it, it's the only time
 					// we'll see it.
-					$DirHasChildren[$fileinfo->getPathname()] = 0;
+					$DirHasChildren[Path::fromString($fileinfo->getPathname())] = 0;
 				}
 
+                $p = Path::fromString($fileinfo->getPath());
 				// Count elements, increment the child number of the parent directory
-				if (! isset($DirHasChildren[$fileinfo->getPath()]))
-					$DirHasChildren[$fileinfo->getPath()] = 1;
+				if (! isset($DirHasChildren[$p]))
+					$DirHasChildren[$p] = 1;
 				else
-					$DirHasChildren[$fileinfo->getPath()]++;
+					$DirHasChildren[$p] = $DirHasChildren[$p] + 1;
 
 				//If it's not a file
 				if (! $fileinfo->isFile() && ! $fileinfo->isLink()) {
@@ -683,78 +743,115 @@ function fileGrimReaper ($dirToScan)
 						error("'$file' is immortal... It needs renaming so it can be reaped when its time comes.");
 
 					continue;
-                }
+				}
 
-                if (false === ($fileSafeMTime = getSplInfoSafeMTime($fileinfo))) {
-                    error("'$file' is impervious to our time scanner! Its modification time could not be determined...");
-                    continue;
-                }
+				if (false === ($fileSafeMTime = getSplInfoSafeMTime($fileinfo))) {
+					error("'$file' is impervious to our time scanner! Its modification time could not be determined...");
+					continue;
+				}
 
-				$NewSnapShot[$fileinfo->getPath()][basename($fileinfo->getPathname())] = [
+
+                $NewSnapShot[$p] ??= new SplObjectStorage();
+				$NewSnapShot[$p][Name::get(basename($fileinfo->getPathname()))] = [
 					FOUND_ON => time(),
 					FILE_M_TIME => getSplInfoSafeMTime($fileinfo),
 				];
 				$FoundFilesCounter++;
 
 				if (! ($FoundFilesCounter % 100) )
-					temp_cprint($FoundFilesCounter, " files found (scanning '...", substr($fileinfo->getPath(),-20), DIRECTORY_SEPARATOR,"')");
+                    temp_cprint(number_format($FoundFilesCounter), " files found (scanning '...", substr($fileinfo->getPath(),-20), DIRECTORY_SEPARATOR,"')");
+
+                if (! ($FoundFilesCounter % 100_000))
+                    printStatus();
+
+				if (false && $FoundFilesCounter == 10000000) {
+					$limitTripped = true;
+					cprint("Warning: 10M files limit tripped, stopping there...");
+					break;
+				}
 			}
 		} else {
 			error("Impossible to take snapshot for directory '", $dirToScan, "'...");
 			continue;
-		}
+        }
 
 		/* ################################################
 		 * # Compare the new snapshot with the known data #
 		 * ################################################
 		 */
 
-		unlogged_cprint("\tComparing with saved snapshot...");
+        printStatus();
+		unlogged_cprint("\tComparing $FoundFilesCounter files with saved snapshot...");
 
 		$ModifiedFilesCounter       = 0;
 		$DisappearedFilesCounter    = 0;
-		$filesToDelete              = [];
+		$filesToDelete              = new SplObjectStorage();
 
-		foreach ($knownDatas as $dirName=>$dirItems)
-			foreach ($dirItems as $fileName=>$times) {
+        foreach (clone $knownDatas as $dirName) {
+            $dirItems = $knownDatas[$dirName];
+
+            foreach (clone $dirItems as $fileName) {
+                $times = $dirItems[$fileName];
 				// if the file is still there
 				if (isset($NewSnapShot[$dirName][$fileName])) {
 
 					// If the file has NOT been modified since the last scan,
 					// check if it's elligeable for deletion
 					if (isMTimeTheSame( $NewSnapShot[$dirName][$fileName][FILE_M_TIME], $times[FILE_M_TIME])) {
-						if ($times[FOUND_ON] + $dirParam['duration'] < NOW)
-							$filesToDelete[$dirName][] = $fileName;
-					} else {
+                        if ($times[FOUND_ON] + $dirParam['duration'] < NOW) {
+                            $filesToDelete[$dirName] ??= new SplObjectStorage();
+                            $filesToDelete[$dirName]->attach($fileName);
+                        }
+                    } else {
+                        $newTimes = [
+                            FOUND_ON => NOW,
+                            FILE_M_TIME => $NewSnapShot[$dirName][$fileName][FILE_M_TIME],
+                        ];
 						// treat as a new file
-						$knownDatas[$dirName][$fileName][FOUND_ON] = NOW;
-						$knownDatas[$dirName][$fileName][FILE_M_TIME] = $NewSnapShot[$dirName][$fileName][FILE_M_TIME];
+						$knownDatas[$dirName][$fileName] = $newTimes;
 						$ModifiedFilesCounter++;
 					}
 
-				} else {
+				} elseif (!$limitTripped) { // only if the limit was not tripped
+                    unlogged_cprint("did not find ", $dirName, DIRECTORY_SEPARATOR, " : ", $fileName, " h: ", trim(spl_object_hash($dirName), "0"), "path known? ", isset($knownDatas[$dirName]) );
 					// the file is no longer there so delete its entry in $KnownDatas
 					// this is where the list is cleaned
-					unset ($knownDatas[$dirName][$fileName]);
+                    unset ($knownDatas[$dirName][$fileName]);
+
 					$DisappearedFilesCounter++;
 
 					if (!count($knownDatas[$dirName]))
 						unset($knownDatas[$dirName]);
 				}
-			}
+            }
+        }
 
 		/* ################################
 		 * # Add new items to $knownDatas #
 		 * ################################
 		 */
+        printStatus();
+        unlogged_cprint("adding new files...");
 
 		$NewFilesCounter        = 0;
-		foreach ($NewSnapShot as $dirName=>$dirItems)
-			foreach ($dirItems as $fileName=>$times)
-				if (! isset ($knownDatas[$dirName][$fileName])) {
-					$knownDatas[$dirName][$fileName] = $times;
-					$NewFilesCounter++;
-				}
+        foreach (clone $NewSnapShot as $dirName) {
+         //   unlogged_cprint("dirname: ", $dirName);
+            $dirItems = $NewSnapShot[$dirName];
+
+            foreach ($dirItems as $fileName) {
+              //  unlogged_cprint("\tfilename: ", $fileName);
+                $times = $dirItems[$fileName];
+
+                if (! isset ($knownDatas[$dirName][$fileName])) {
+                    $knownDatas[$dirName] ??= new SplObjectStorage();
+                    $knownDatas[$dirName][$fileName] = $times;
+                    $NewFilesCounter++;
+                }
+            }
+        }
+        unset($dirName, $dirItems, $fileName);
+        unlogged_cprint("$NewFilesCounter added");
+
 
 		unset($NewSnapShot);
 
@@ -763,32 +860,33 @@ function fileGrimReaper ($dirToScan)
 		 * ##########################
 		 */
 
+        printStatus();
 		unlogged_cprint("\tReaping expired files...");
-		$deletedFileList        = [];
+		$deletedFileList        = new SplObjectStorage();
 		$deletedFilesCounter    = 0;
 		$reapedDirectories      = []; // used to remove empty dirs after deleting files
 
 		// Delete the files in a sorted order so the delete log is readable
 		// Dir sort:
-		array_multisort($filesToDelete);
+		$filesToDelete = sortByname($filesToDelete);
 
-		foreach($filesToDelete as $dirName => $fileNames) {
+        foreach($filesToDelete as $dirName) {
+            $fileNames = $filesToDelete[$dirName];
 
-			// File sort
-			array_multisort($fileNames);
 
-			foreach ($fileNames as $fileName) {
+			foreach (sortByname($fileNames) as $fileName) {
 				if (removeFile($dirName.DIRECTORY_SEPARATOR.$fileName)) {
 
 					unset($knownDatas[$dirName][$fileName]);
 					if (!count($knownDatas[$dirName]))
 						unset($knownDatas[$dirName]);
 
-					$deletedFileList[$dirName][] = $fileName;
+					$deletedFileList[$dirName] ??= new SplObjectStorage();
+					$deletedFileList[$dirName]->attach($fileName);
 					$deletedFilesCounter++;
 
-					$reapedDirectories[$dirName] = true;
-					$DirHasChildren[$dirName]--;
+					$reapedDirectories[crc32((string)$dirName)] = true;
+					$DirHasChildren[$dirName] = ($DirHasChildren[$dirName] - 1);
 				}
 			}
 		}
@@ -799,29 +897,29 @@ function fileGrimReaper ($dirToScan)
 		 * ################################
 		 */
 
-		unlogged_cprint("\tRemoving orphaned directories...");
+		unlogged_cprint("\tRemoving orphaned directories... ", count($DirHasChildren), " directories to check");
 
+        $scannedRootPath = Path::fromString($dirPath);
 		// Protect the base directory from deletion (adding a virtual child)
-		if (!isset($DirHasChildren[$dirPath]))
-			$DirHasChildren[$dirPath] = 1;
+		if (!isset($DirHasChildren[$scannedRootPath]))
+			$DirHasChildren[$scannedRootPath] = 1;
 		else
-			$DirHasChildren[$dirPath]++;
+            $DirHasChildren[$scannedRootPath] = $DirHasChildren[$scannedRootPath] + 1;
 
+        unset($scannedRootPath);
 
 		// sort the array using the path depth, the deepest first
-		if (!
-			uksort ($DirHasChildren, function ($a, $b) {
-				if (getDirectoryDepth($a) == getDirectoryDepth($b))
-					return 0;
+        $DirHasChildren = sortSplObjectStorage ($DirHasChildren, function ($a, $b) {
+            if (getDirectoryDepth($a[0]) == getDirectoryDepth($b[0]))
+                return 0;
 
-				if (getDirectoryDepth($a) > getDirectoryDepth($b))
-					return -1;
+            if (getDirectoryDepth($a[0]) > getDirectoryDepth($b[0]))
+                return -1;
 
-				if (getDirectoryDepth($a) < getDirectoryDepth($b))
-					return 1;
-			}
-		))
-			error ("uksort() failed.");
+            if (getDirectoryDepth($a[0]) < getDirectoryDepth($b[0]))
+                return 1;
+        });
+
 
 		// deleted directories counters
 		$reapedDeletedCounter   = 0;
@@ -830,42 +928,44 @@ function fileGrimReaper ($dirToScan)
 		$failedRemovalCounter   = 0;
 		$DirIsDeadEnd           = array();
 
-		foreach ($DirHasChildren as $path=>$_notused_)
+        foreach ($DirHasChildren as $path) {
+
+            $parentPath = Path::fromString(dirname((string)$path));
 			// the directory is empty and files were reaped inside it
-			if ( !$DirHasChildren[$path] && isset($reapedDirectories[$path])) {
+            if ( !$DirHasChildren[$path] && isset($reapedDirectories[crc32((string)$path)])) {
 
 				if (! removeDirectory($path) ) {
 					$failedRemovalCounter++;
 				} else {
-					//cprint('Removed empty (reaped) directory: ', $path);
+					cprint('Removed empty (reaped) directory: ', $path);
 					$reapedDeletedCounter++;
 
 					// decrease parent children number, this will be enough to trigger a deletion (since we go from
 					// the child to the parent) but not a deletion of a parent directory containing only directories
 					// where no files were reaped.
-					if (--$DirHasChildren[dirname($path)] < 0)
-						error("Impossible Error #3: too many elements: ", $DirHasChildren[dirname($path)]);
+					if (($DirHasChildren[$parentPath] = $DirHasChildren[$parentPath] - 1) < 0)
+						error("Impossible Error #3: too many elements: ", $DirHasChildren[$parentPath]);
 
 					// if the directory is now empty, mark it for deletion
-					if (! $DirHasChildren[dirname($path)])
-						$DirIsDeadEnd[dirname($path)] = true;
+					if (! $DirHasChildren[$parentPath])
+						$DirIsDeadEnd[crc32((string)$parentPath)] = true;
 				}
-			} elseif (isset($DirIsDeadEnd[$path])) {
+			} elseif (isset($DirIsDeadEnd[crc32((string)$path)])) {
 				if (! removeDirectory($path)) {
 					$failedRemovalCounter++;
 				} else {
 					$deadEndDeletedCounter++;
 
-					if (--$DirHasChildren[dirname($path)] < 0)
-						error("Impossible Error #5: too many elements: ", $DirHasChildren[dirname($path)]);
+					if (($DirHasChildren[$parentPath] = $DirHasChildren[$parentPath] - 1) < 0)
+						error("Impossible Error #5: too many elements: ", $DirHasChildren[$parentPath]);
 
 					// if the directory is now empty, mark it for deletion
-					if (! $DirHasChildren[dirname($path)])
-						$DirIsDeadEnd[dirname($path)] = true;
+					if (! $DirHasChildren[$parentPath])
+						$DirIsDeadEnd[crc32((string)$parentPath)] = true;
 
 				}
 				// the directory is empty and is older than allowed duration
-			} elseif (!$DirHasChildren[$path] && (@filemtime($path) + $dirParam['duration'] < NOW)) {
+			} elseif (!$DirHasChildren[$path] && (@filemtime((string)$path) + $dirParam['duration'] < NOW)) {
 
 				if (! removeDirectory($path)) {
 					$failedRemovalCounter++;
@@ -874,16 +974,17 @@ function fileGrimReaper ($dirToScan)
 					$expiredDeletedCounter++;
 
 					// decrease parent children number, this won't be enough to trigger a deletion since we just changed the directory modtime.
-					if (--$DirHasChildren[dirname($path)] < 0)
-						error("Impossible Error #4: too many elements: ", $DirHasChildren[dirname($path)]);
+					if (($DirHasChildren[$parentPath] = $DirHasChildren[$parentPath] - 1) < 0)
+						error("Impossible Error #4: too many elements: ", $DirHasChildren[$parentPath]);
 
 					// if the directory is now empty, mark it for deletion
-					if (! $DirHasChildren[dirname($path)])
-						$DirIsDeadEnd[dirname($path)] = true;
+					if (! $DirHasChildren[$parentPath])
+						$DirIsDeadEnd[crc32((string)$parentPath)] = true;
 
 				}
 
-			}
+            }
+        }
 
 		$end = microtime(true);
 
@@ -902,20 +1003,26 @@ function fileGrimReaper ($dirToScan)
 			$isLast = function ($i) use (&$lastIndex) { return ($i == $lastIndex); };
 
 
-			foreach($deletedFileList as $dirName => $fileNames) {
+            foreach($deletedFileList as $dirName) {
+                $fileNames = $deletedFileList[$dirName];
 				$lastIndex = count($fileNames) - 1;
 				cprint("Directory: '$dirName':");
-				foreach($fileNames as $i => $fileName) {
+                foreach(clone $fileNames as $i => $fileName) {
+                    $previous = null;
+                    if ($i > 0) {
+                        $fileNames->seek($i - 1);
+                        $previous = $fileNames->current();
+                    }
 
 					// Are we inside a sequentially-numbered file list?
 					$inSequence = $i > 0
 						&& ! $isLast ($i)
-						&& IsStringInc($fileNames[$i - 1], $fileNames[$i]);
+						&& IsStringInc((string)$previous, (string)$fileName);
 
 					// We are not and were not inside a file sequence
 					if (! $inSequence && ! $skippedCount) {
 						// let's echo the file name then...
-						$cprintFile ($fileName);
+						$cprintFile ((string)$fileName);
 					} else
 						++$skippedCount;
 
@@ -928,10 +1035,10 @@ function fileGrimReaper ($dirToScan)
 						// if we haven't reached the end of the list
 						if ( ! $isLast ($i) )
 							// we echo the last file of the sequence
-							$cprintFile ($fileNames[$i - 1]);
+							$cprintFile ((string)$previous);
 
 						// echo the file we're on since it wasn't displayed
-						$cprintFile ($fileName);
+						$cprintFile ((string)$fileName);
 
 						$skippedCount = 0;
 					}
@@ -963,10 +1070,10 @@ function fileGrimReaper ($dirToScan)
 			if (SHOW)
 				cprint ('NOTE: Nothing was actually done (--show was set)');
 
-			cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
+			cprint ("\n", sprintf("Reaping took %0.02fs and used %uMb or RAM", $end - $start, memory_get_peak_usage() / 1024 / 1024));
 
 		} else
-			unlogged_cprint ("Nothing to do. $FoundFilesCounter files were found.");
+			unlogged_cprint ("Nothing to do. $FoundFilesCounter files were found", sprintf(" (%uMb of RAM used).", memory_get_peak_usage() / 1024 / 1024));
 
 
 		saveDirectoryScannedDatas($dirPath, $knownDatas);
