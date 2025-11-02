@@ -52,10 +52,30 @@ define ( 'NOW', time() );
 define ( 'ISWINDOWS',  strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
 
 ini_set('memory_limit','26G');
+//ini_set('opcache.jit','1'); // cannot be set at runtime
 
 
 $old_umaks = umask(0);
 
+
+function seekSplObjectStorage(SplObjectStorage $s, int $position): void
+{
+    if ($position < 0) {
+        throw new OutOfBoundsException('Position must be non-negative');
+    }
+
+    $s->rewind();
+    $currentPos = 0;
+
+    while ($s->valid() && $currentPos < $position) {
+        $s->next();
+        $currentPos++;
+    }
+
+    if ($currentPos !== $position) {
+        throw new OutOfBoundsException("Position $position is out of bounds");
+    }
+}
 
 
 function sortSplObjectStorage(
@@ -553,7 +573,144 @@ function getConfig ()
     return $directories;
 }
 
-function getDirectoryScannedDatas ($path, &$lastScanned=false): SplObjectStorage
+
+function mySerialize($data): string {
+    static $warningPrintedOnce = false;
+
+    if (function_exists('igbinary_serialize'))
+        return igbinary_serialize($data);
+    else {
+        if (!$warningPrintedOnce) {
+            unlogged_cprint("⚠️ Warning: using standard php serialize because igbinary extension not available (igbinary is recommended)");
+            $warningPrintedOnce = true;
+        }
+        return serialize($data);
+    }
+}
+
+const CHUNK_MARKER = "\n---CHUNK---\n";
+
+function serializeToFile(string $filename, SplObjectStorage $data): int {
+    if ($data instanceOf SplObjectStorage && count($data))
+        $data->rewind();
+
+    $handle = fopen($filename, 'wb');
+
+    if (!$handle) {
+        throw new RuntimeException("Cannot open file: $filename");
+    }
+
+    $written = 0;
+    foreach ($data as $dirName) {
+        $dirItems = $data[$dirName];
+
+        $singlePathStorage = new SplObjectStorage();
+        $singlePathStorage[$dirName] = $dirItems;
+        //        unlogged_cprint("serialized d: ", $dirName, " with ", count($data[$dirName]), " files");
+        $writtenNow = fwrite($handle, mySerialize($singlePathStorage) . CHUNK_MARKER);
+
+        if (!$writtenNow)
+            return false;
+
+        $written += $writtenNow;
+    }
+    fclose($handle);
+
+    return $written;
+}
+
+function myUnSerialize(string $str) {
+    static $warningPrintedOnce = false;
+
+    if (function_exists('igbinary_unserialize')) {
+        $data = igbinary_unserialize($str);
+        if ($data !== false && $data !== null)
+            return $data;
+        else {
+            unlogged_cprint("⚠️ Warning: using standard php unserialize because igbinary failed (assuming default serialization)");
+            return unserialize($str);
+        }
+
+    } else {
+        if (!$warningPrintedOnce) {
+            unlogged_cprint("⚠️ Warning: using standard php unserialize because igbinary extension not available (igbinary is recommended)");
+            $warningPrintedOnce = true;
+        }
+        return unserialize($str);
+    }
+}
+
+function unserializeFromFile_gen(string $filename): Generator {
+    $handle = fopen($filename, 'rb');
+    if (!$handle) {
+        throw new RuntimeException("Cannot open file: $filename");
+    }
+
+    $buffer = '';
+    while (!feof($handle)) {
+        $buffer .= fread($handle, 1024*1024); // Read in 1Mb chunks
+
+        while (($pos = strpos($buffer, CHUNK_MARKER)) !== false) {
+            $chunk = substr($buffer, 0, $pos);
+            $buffer = substr($buffer, $pos + strlen(CHUNK_MARKER)); // Remove processed part
+
+            if ($chunk !== '') {
+                $data = myUnSerialize($chunk);
+                if ($data !== false && $data !== null) {
+                    yield $data;
+                } else
+                    yield false;
+            }
+        }
+    }
+
+    // Handle any remaining data
+    if ($buffer !== '' && $buffer !== CHUNK_MARKER) {
+        $data = myUnSerialize($buffer);
+        if ($data !== false  && $data !== null) {
+            yield $data;
+        } else
+            yield false;
+    }
+
+    fclose($handle);
+}
+
+function unserializeFromFile(string $filename) : SplObjectStorage | array | false {
+    $data = new SplObjectStorage();
+    $failed = false;
+    foreach (unserializeFromFile_gen($filename) as $singleOrMultipPathStorage) {
+
+        if (is_array($singleOrMultipPathStorage)) { // old format
+            $data = $singleOrMultipPathStorage;
+            break;
+        }
+
+
+        if ($singleOrMultipPathStorage !== false) {
+            if (count($singleOrMultipPathStorage) > 1)
+                cprint("⚠️ $filename: old non-chunked serialization found: ", count($singleOrMultipPathStorage), " paths");
+            foreach ($singleOrMultipPathStorage as $dirName) {
+                //$temp = $singleOrMultipPathStorage[$dirName]->current();
+                //unlogged_cprint("unserialized d: ", $dirName, " - did: ", spl_object_id($dirName), " with ", count($singleOrMultipPathStorage[$dirName]), " files - first: ", $temp, " fid: ", spl_object_id($temp));
+                $data[$dirName] = $singleOrMultipPathStorage[$dirName];
+                $data[$dirName]->rewind();
+            }
+        } else {
+            $failed = true;
+            break;
+        }
+    }
+
+    if (!$failed) {
+        if ($data instanceOf SplObjectStorage && count($data))
+            $data->rewind();
+        return $data;
+    } else
+        return false;
+}
+
+function getDirectoryScannedDatas ($path, &$lastScanned=false): SplObjectStorage | false
 {
     $dataFileName = preg_replace("#[\\\\/]|:\\\\#", "-", $path);
 
@@ -572,13 +729,23 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false): SplObjectStorage
 
         $lastScanned = filemtime($dataFileName);
 
-        $data = unserialize (file_get_contents($dataFileName));
+        $data = false;
+        $data = unserializeFromFile($dataFileName);
+
+        if ($data === false || $data === null || !($data instanceOf SplObjectStorage || is_array($data))) {
+            if (function_exists('igbinary_unserialize'))
+                error("Could not unserialize data.");
+            else
+                error("Could not unserialize data. installing igbinary might solve the problem");
+
+            return false;
+        }
 
         if (is_array($data)) {
             // convert very old format
             $firstElement = current($data);
             if ($firstElement !== FALSE && isset($firstElement["foundOn"]) ) {
-                cprint("Converting snapshot from VERY old format...");
+                cprint("ℹ️ Converting snapshot from VERY old format...");
                 $cData = [];
                 foreach($data as $fullFilePath=>$times) {
                     $cData[dirname($fullFilePath)][basename($fullFilePath)] = [
@@ -591,7 +758,7 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false): SplObjectStorage
 
             $new = new SplObjectStorage();
 
-            cprint("Converting snapshot $dataFileName from old format...");
+            cprint("ℹ️ Converting snapshot $dataFileName from old format...");
             foreach ($data as $dir => $files) {
                 $path = Path::fromString($dir);
                 $new[$path] ??= new SplObjectStorage();
@@ -604,6 +771,22 @@ function getDirectoryScannedDatas ($path, &$lastScanned=false): SplObjectStorage
 
             return $new;
         } elseif ($data instanceOf SplObjectStorage) {
+            printStatus();
+            unlogged_cprint("\tCreating name name cache ", number_format(Name::getPoolSize()));
+
+            foreach ($data as $dir) {
+                $files = $data[$dir];
+                foreach (clone $files as $file) {
+                    $canonical = Name::get((string)$file);
+                    if (spl_object_id($file) != spl_object_id($canonical)) {
+                        $fTimes = $files[$file];
+                        unset($files[$file]);
+                        $files[$canonical] = $fTimes;
+                        //cprint("\t\tdebug: ", $file, " was migrated to canonical version: ", spl_object_id($canonical));
+                    }
+
+                }
+            }
             return $data;
         } else {
             error('Error loading data for directory: ', $path);
@@ -631,11 +814,10 @@ function saveDirectoryScannedDatas ($path, SplObjectStorage $datas)
     $dataFileName = DATA_PATH . '/'. UNAME . '_' . $dataFileName . '.data.serialized';
 
     $tempFileName = $dataFileName . sprintf("_%X", crc32(microtime()));
-    $serializedDatas = serialize($datas);
 
     // Write the data in a temporary file and really check it's complete
-    if ( file_put_contents($tempFileName, $serializedDatas) !== strlen($serializedDatas)
-        || filesize($tempFileName)                          !== strlen($serializedDatas) )
+    if ( ($written = serializeToFile($tempFileName, $datas)) === false
+        || filesize($tempFileName)                           !== $written )
 
         error("Couldn't write scanned datas in: ", $tempFileName);
     else {
@@ -649,14 +831,19 @@ function saveDirectoryScannedDatas ($path, SplObjectStorage $datas)
 }
 
 function printStatus(): void {
-    unlogged_cprint("Name cache: ", number_format(Name::getPoolSize()), " -  Path cache: p-: ", number_format(Path::getCacheSizes()[0]), " - fc-: ", Path::getCacheSizes()[1],
-        " (max of ",number_format(memory_get_peak_usage() / 1024 / 1024) ," Mb of RAM used), ");
+    unlogged_cprint("\t\tName cache: ", number_format(Name::getPoolSize()), " -  Path cache: p-: ", number_format(Path::getCacheSizes()[0]), " - fc-: ", Path::getCacheSizes()[1],
+        " (max of ",number_format(memory_get_peak_usage() / 1024 / 1024) ," Mb of RAM used), ", "current usage: ", number_format(memory_get_usage() / 1024 / 1024), " Mb" );
 }
 
 $pathPidFile = "";
 function fileGrimReaper ($dirToScan)
 {
-	global $pathPidFile, $pid_file;
+    global $pathPidFile, $pid_file;
+
+    $opCacheState = opcache_get_status();
+
+    if (!is_array($opCacheState) || !isset($opCacheState['jit']['on']) || !$opCacheState['jit']['on'])
+        cprint("⚠️ oopcache.jit is not enabled in config");
 
 
 	// sort directories so the shortest durations are scanned first
@@ -671,13 +858,18 @@ function fileGrimReaper ($dirToScan)
 
 		$start          = microtime(true);
 		$lastScanned    = 0;
+
+        // The log file is named after the directory being checked so...
+        unlogged_cprint("\nℹ️ Now considering files in: ", $dirPath, '...');
+
 		// get previous scan datas
-        $knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned);
+        if (false === ($knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned))) {
+            cprint("🔴 Error: Unserialize failed, skipping ", $dirPath);
+            continue;
+        }
 
         printStatus();
 
-		// The log file is named after the directory being checked so...
-		unlogged_cprint("\nNow considering files in: ", $dirPath, '...');
 
 
 		// Check if another instance is already scanning this directory
@@ -699,7 +891,7 @@ function fileGrimReaper ($dirToScan)
 
 
 		if ( (NOW - $lastScanned) < RESPITE * 60 * 60 && $dirParam['duration'] > 2 * RESPITE * 60 * 60) {
-			unlogged_cprint("Skipping (snapshot is just ", sprintf("%0.1f", (NOW - $lastScanned) / 3600)," hours and life is ", sprintf("%0.1f", $dirParam['duration'] / 86400), " days)");
+			unlogged_cprint("ℹ️ Skipping (snapshot is just ", sprintf("%0.1f", (NOW - $lastScanned) / 3600)," hours and life is ", sprintf("%0.1f", $dirParam['duration'] / 86400), " days)");
 			continue;
 		}
 
@@ -729,6 +921,7 @@ function fileGrimReaper ($dirToScan)
 				}
 
                 $p = Path::fromString($fileinfo->getPath());
+                //unlogged_cprint("found path ", $p, "with id: ", spl_object_id($p));
 				// Count elements, increment the child number of the parent directory
 				if (! isset($DirHasChildren[$p]))
 					$DirHasChildren[$p] = 1;
@@ -761,12 +954,12 @@ function fileGrimReaper ($dirToScan)
 				if (! ($FoundFilesCounter % 100) )
                     temp_cprint(number_format($FoundFilesCounter), " files found (scanning '...", substr($fileinfo->getPath(),-20), DIRECTORY_SEPARATOR,"')");
 
-                if (! ($FoundFilesCounter % 100_000))
+                if (! ($FoundFilesCounter % 500_000))
                     printStatus();
 
 				if (false && $FoundFilesCounter == 10000000) {
 					$limitTripped = true;
-					cprint("Warning: 10M files limit tripped, stopping there...");
+					cprint("⚠️ Warning: 10M files limit tripped, stopping there...");
 					break;
 				}
 			}
@@ -812,8 +1005,14 @@ function fileGrimReaper ($dirToScan)
 						$ModifiedFilesCounter++;
 					}
 
-				} elseif (!$limitTripped) { // only if the limit was not tripped
-                    unlogged_cprint("did not find ", $dirName, DIRECTORY_SEPARATOR, " : ", $fileName, " h: ", trim(spl_object_hash($dirName), "0"), "path known? ", isset($knownDatas[$dirName]) );
+                } elseif (!$limitTripped) { // only if the limit was not tripped
+                    /*
+                    unlogged_cprint("did not find ", $dirName, " - did: ", spl_object_id($dirName), " ", DIRECTORY_SEPARATOR, " : ", $fileName, " fid: ", spl_object_id($fileName), " path known? ", isset($NewSnapShot[$dirName]) );
+                    if (isset($NewSnapShot[$dirName])) {
+                        $t = $NewSnapShot[$dirName]->current();
+                        unlogged_cprint("\t dir is known and its first file is ", $t, " with id:", spl_object_id($t), " and data: ", print_r($NewSnapShot[$dirName][$t], true));
+                    }
+                     */
 					// the file is no longer there so delete its entry in $KnownDatas
 					// this is where the list is cleaned
                     unset ($knownDatas[$dirName][$fileName]);
@@ -831,29 +1030,31 @@ function fileGrimReaper ($dirToScan)
 		 * ################################
 		 */
         printStatus();
-        unlogged_cprint("adding new files...");
+        unlogged_cprint("\tAdding new files...");
 
 		$NewFilesCounter        = 0;
-        foreach (clone $NewSnapShot as $dirName) {
-         //   unlogged_cprint("dirname: ", $dirName);
+        foreach ($NewSnapShot as $dirName) {
             $dirItems = $NewSnapShot[$dirName];
 
-            foreach ($dirItems as $fileName) {
-              //  unlogged_cprint("\tfilename: ", $fileName);
-                $times = $dirItems[$fileName];
+            if (! isset ($knownDatas[$dirName])) {
+                $knownDatas[$dirName] = $NewSnapShot[$dirName];
+                $NewFilesCounter += count($knownDatas[$dirName]);
+            } else
+                foreach ($dirItems as $fileName) {
+                    $times = $dirItems[$fileName];
 
-                if (! isset ($knownDatas[$dirName][$fileName])) {
-                    $knownDatas[$dirName] ??= new SplObjectStorage();
-                    $knownDatas[$dirName][$fileName] = $times;
-                    $NewFilesCounter++;
-                }
+                    if (! isset ($knownDatas[$dirName][$fileName])) {
+                        $knownDatas[$dirName][$fileName] = $times;
+                        $NewFilesCounter++;
+                    }
             }
         }
         unset($dirName, $dirItems, $fileName);
-        unlogged_cprint("$NewFilesCounter added");
-
-
 		unset($NewSnapShot);
+        unlogged_cprint("$NewFilesCounter added");
+        printStatus();
+
+
 
 		/* ##########################
 		 * # Reap the expired files #
@@ -897,6 +1098,7 @@ function fileGrimReaper ($dirToScan)
 		 * ################################
 		 */
 
+        printStatus();
 		unlogged_cprint("\tRemoving orphaned directories... ", count($DirHasChildren), " directories to check");
 
         $scannedRootPath = Path::fromString($dirPath);
@@ -987,6 +1189,7 @@ function fileGrimReaper ($dirToScan)
         }
 
 		$end = microtime(true);
+        printStatus();
 
 		/* ################################
 		 * #   Report/Log what happened   #
@@ -1010,7 +1213,7 @@ function fileGrimReaper ($dirToScan)
                 foreach(clone $fileNames as $i => $fileName) {
                     $previous = null;
                     if ($i > 0) {
-                        $fileNames->seek($i - 1);
+                        seekSplObjectStorage($fileNames, $i - 1);
                         $previous = $fileNames->current();
                     }
 
@@ -1068,20 +1271,28 @@ function fileGrimReaper ($dirToScan)
 				error ($failedRemovalCounter, " directories couldn't be removed.");
 
 			if (SHOW)
-				cprint ('NOTE: Nothing was actually done (--show was set)');
+				cprint ('💡NOTE: Nothing was actually done (--show was set)');
 
-			cprint ("\n", sprintf("Reaping took %0.02fs and used %uMb or RAM", $end - $start, memory_get_peak_usage() / 1024 / 1024));
-
+            cprint ("\n", sprintf("Reaping took %0.02fs", $end - $start));
 		} else
-			unlogged_cprint ("Nothing to do. $FoundFilesCounter files were found", sprintf(" (%uMb of RAM used).", memory_get_peak_usage() / 1024 / 1024));
+			unlogged_cprint ("ℹ️ Nothing to do. $FoundFilesCounter files were found");
 
 
+        printStatus();
+        // clear as much ram as possible before serialization...
+        unlogged_cprint("\tcleaning up memory...");
+		unset($deletedFileList, $DirHasChildren, $filesToDelete);
+        Name::_resetPool();
+        Path::_reset();
+        printStatus();
+        unlogged_cprint("\tSaving updated snapshot...");
 		saveDirectoryScannedDatas($dirPath, $knownDatas);
-		unset($knownDatas, $deletedFileList, $DirHasChildren, $filesToDelete);
+		unset($knownDatas);
+        printStatus();
 		unlink ($pathPidFile);
 		$pathPidFile = "";
 
-	}
+    }
 }
 
 printHeader();
@@ -1089,7 +1300,6 @@ printHeader();
 GetAndSetOptions ();
 checkDataPath ();
 fileGrimReaper ( getConfig () );
-
 
 
 global $old_umaks;
