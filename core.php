@@ -646,31 +646,59 @@ function unserializeFromFile_gen(string $filename): Generator {
         throw new RuntimeException("Cannot open file: $filename");
     }
 
-    $buffer = '';
-    while (!feof($handle)) {
-        $buffer .= fread($handle, 1024*1024); // Read in 1Mb chunks
+    $parts = [];
+    $marker_len = strlen(CHUNK_MARKER);
 
-        while (($pos = strpos($buffer, CHUNK_MARKER)) !== false) {
-            $chunk = substr($buffer, 0, $pos);
-            $buffer = substr($buffer, $pos + strlen(CHUNK_MARKER)); // Remove processed part
+    while (!feof($handle)) {
+        $data = fread($handle, 4 * 1024 * 1024); // Larger reads to reduce array size and concatenations
+        if ($data === '') {
+            break;
+        }
+
+        $offset = 0;
+        while (($pos = strpos($data, CHUNK_MARKER, $offset)) !== false) {
+            $part_len = $pos - $offset;
+            if ($part_len > 0) {
+                $parts[] = substr($data, $offset, $part_len); // Copy only the pre-marker part (< read size)
+            }
+
+            // Chunk complete; implode to minimize temp allocs
+            $chunk = implode('', $parts);
+            $parts = [];
 
             if ($chunk !== '') {
-                $data = myUnSerialize($chunk);
-                if ($data !== false && $data !== null) {
-                    yield $data;
-                } else
+                $data_unser = myUnSerialize($chunk);
+                if ($data_unser !== false && $data_unser !== null) {
+                    yield $data_unser;
+                } else {
                     yield false;
+                }
+            }
+
+            $offset = $pos + $marker_len;
+        }
+
+        // Add remaining (partial chunk or full read if no marker)
+        if ($offset < strlen($data)) {
+            if ($offset === 0) {
+                $parts[] = $data; // Direct ref, no copy
+            } else {
+                $parts[] = substr($data, $offset); // Copy only the remainder (< read size)
             }
         }
     }
 
-    // Handle any remaining data
-    if ($buffer !== '' && $buffer !== CHUNK_MARKER) {
-        $data = myUnSerialize($buffer);
-        if ($data !== false  && $data !== null) {
-            yield $data;
-        } else
-            yield false;
+    // Handle any remaining chunk
+    if (!empty($parts)) {
+        $chunk = implode('', $parts);
+        if ($chunk !== '') {
+            $data_unser = myUnSerialize($chunk);
+            if ($data_unser !== false && $data_unser !== null) {
+                yield $data_unser;
+            } else {
+                yield false;
+            }
+        }
     }
 
     fclose($handle);
@@ -862,15 +890,6 @@ function fileGrimReaper ($dirToScan)
         // The log file is named after the directory being checked so...
         unlogged_cprint("\nℹ️ Now considering files in: ", $dirPath, '...');
 
-		// get previous scan datas
-        if (false === ($knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned))) {
-            cprint("🔴 Error: Unserialize failed, skipping ", $dirPath);
-            continue;
-        }
-
-        printStatus();
-
-
 
 		// Check if another instance is already scanning this directory
 		$pathPidFile = $pid_file.".".crc32($dirPath);
@@ -893,7 +912,18 @@ function fileGrimReaper ($dirToScan)
 		if ( (NOW - $lastScanned) < RESPITE * 60 * 60 && $dirParam['duration'] > 2 * RESPITE * 60 * 60) {
 			unlogged_cprint("ℹ️ Skipping (snapshot is just ", sprintf("%0.1f", (NOW - $lastScanned) / 3600)," hours and life is ", sprintf("%0.1f", $dirParam['duration'] / 86400), " days)");
 			continue;
-		}
+        }
+
+
+        // get previous scan datas
+        if (false === ($knownDatas = getDirectoryScannedDatas($dirPath, $lastScanned))) {
+            cprint("🔴 Error: Unserialize failed, skipping ", $dirPath);
+            continue;
+        }
+
+        gc_collect_cycles();
+
+        printStatus();
 
 		/* ########################################
 		 * # Take a new snapshot of the directory #
@@ -957,7 +987,7 @@ function fileGrimReaper ($dirToScan)
                 if (! ($FoundFilesCounter % 500_000))
                     printStatus();
 
-				if (false && $FoundFilesCounter == 10000000) {
+				if ($FoundFilesCounter == 10000000) {
 					$limitTripped = true;
 					cprint("⚠️ Warning: 10M files limit tripped, stopping there...");
 					break;
