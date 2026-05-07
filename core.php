@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 
-/* File Grim Reaper v1.6 - It will reap your files!
- * (c) 2011-2025 John Wellesz
+/* File Grim Reaper v1.7 - It will reap your files!
+ * (c) 2011-2026 John Wellesz
  *
  *  This file is part of File Grim Reaper.
  *
@@ -27,7 +27,7 @@ declare(strict_types=1);
  */
 
 const VERSION = "1";
-const REVISION = "6"; // Also remember to change the version at the top of both PHP files.
+const REVISION = "7"; // Also remember to change the version at the top of both PHP files.
 const RESPITE  = 12; // hours
 const FOUND_ON = 0;
 const FILE_M_TIME = 1;
@@ -620,6 +620,7 @@ function serializeToFile(string $filename, SplObjectStorage $data): int {
 }
 
 function myUnSerialize(string $str) {
+    global $LOGFILEPATH;
     static $warningPrintedOnce = false;
 
     if (function_exists('igbinary_unserialize')) {
@@ -627,7 +628,9 @@ function myUnSerialize(string $str) {
         if ($data !== false && $data !== null)
             return $data;
         else {
-            unlogged_cprint("⚠️ Warning: using standard php unserialize because igbinary failed (assuming default serialization)");
+            $debug_strLen = strlen($str);
+            unlogged_cprint("⚠️ Warning: using standard php unserialize because igbinary failed (str length: $debug_strLen - filename: $filename) (assuming default serialization)");
+            file_put_contents("$LOGFILEPATH.failedChunk", $str);
             return unserialize($str);
         }
 
@@ -648,60 +651,73 @@ function unserializeFromFile_gen(string $filename): Generator {
 
     $parts = [];
     $marker_len = strlen(CHUNK_MARKER);
+    $overlap = ''; // Buffer to hold partial markers
 
-    while (!feof($handle)) {
-        $data = fread($handle, 4 * 1024 * 1024); // Larger reads to reduce array size and concatenations
-        if ($data === '') {
-            break;
-        }
+    try {
+        while (!feof($handle)) {
+            $data = $overlap . fread($handle, 4 * 1024 * 1024);
 
-        $offset = 0;
-        while (($pos = strpos($data, CHUNK_MARKER, $offset)) !== false) {
-            $part_len = $pos - $offset;
-            if ($part_len > 0) {
-                $parts[] = substr($data, $offset, $part_len); // Copy only the pre-marker part (< read size)
+            // Hold back bytes that could be part of a split marker
+            if (!feof($handle) && strlen($data) >= $marker_len) {
+                $overlap = substr($data, -($marker_len - 1));
+                $data = substr($data, 0, -($marker_len - 1));
+            } else {
+                $overlap = '';
             }
 
-            // Chunk complete; implode to minimize temp allocs
-            $chunk = implode('', $parts);
-            $parts = [];
+            if ($data === '') {
+                break;
+            }
 
+            $offset = 0;
+            while (($pos = strpos($data, CHUNK_MARKER, $offset)) !== false) {
+                $part_len = $pos - $offset;
+                if ($part_len > 0) {
+                    $parts[] = substr($data, $offset, $part_len); // Copy only the pre-marker part (< read size)
+                }
+
+                // Chunk complete; implode to minimize temp allocs
+                $chunk = implode('', $parts);
+                $parts = [];
+
+                if ($chunk !== '') {
+                    $data_unser = myUnSerialize($chunk, $filename);
+                    if ($data_unser !== false && $data_unser !== null) {
+                        yield $data_unser;
+                    } else {
+                        yield false;
+                    }
+                }
+
+                $offset = $pos + $marker_len;
+            }
+
+            // Add remaining (partial chunk or full read if no marker)
+            if ($offset < strlen($data)) {
+                if ($offset === 0) {
+                    $parts[] = $data; // Direct ref, no copy
+                } else {
+                    $parts[] = substr($data, $offset); // Copy only the remainder (< read size)
+                }
+            }
+        }
+
+        // Handle any remaining chunk
+        if (!empty($parts)) {
+            $chunk = implode('', $parts);
             if ($chunk !== '') {
-                $data_unser = myUnSerialize($chunk);
+                $data_unser = myUnSerialize($chunk, $filename);
                 if ($data_unser !== false && $data_unser !== null) {
                     yield $data_unser;
                 } else {
                     yield false;
                 }
             }
-
-            $offset = $pos + $marker_len;
         }
-
-        // Add remaining (partial chunk or full read if no marker)
-        if ($offset < strlen($data)) {
-            if ($offset === 0) {
-                $parts[] = $data; // Direct ref, no copy
-            } else {
-                $parts[] = substr($data, $offset); // Copy only the remainder (< read size)
-            }
-        }
+    } finally {
+        // Guarantee file is closed even if generator breaks early
+        fclose($handle);
     }
-
-    // Handle any remaining chunk
-    if (!empty($parts)) {
-        $chunk = implode('', $parts);
-        if ($chunk !== '') {
-            $data_unser = myUnSerialize($chunk);
-            if ($data_unser !== false && $data_unser !== null) {
-                yield $data_unser;
-            } else {
-                yield false;
-            }
-        }
-    }
-
-    fclose($handle);
 }
 
 function unserializeFromFile(string $filename) : SplObjectStorage | array | false {

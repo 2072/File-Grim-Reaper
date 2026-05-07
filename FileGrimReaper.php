@@ -1,7 +1,7 @@
 <?php
 
-/* File Grim Reaper v1.5 - It will reap your files!
- * (c) 2011-2025 John Wellesz
+/* File Grim Reaper v1.7 - It will reap your files!
+ * (c) 2011-2026 John Wellesz
  *
  *  This file is part of File Grim Reaper.
  *
