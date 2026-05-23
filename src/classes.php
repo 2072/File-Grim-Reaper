@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
 
-/* File Grim Reaper v1.6 - It will reap your files!
- * (c) 2011-2025 John Wellesz
+/* File Grim Reaper - It will reap your files!
+ * (c) 2011-2026 John Wellesz
  *
  *  This file is part of File Grim Reaper.
  *
